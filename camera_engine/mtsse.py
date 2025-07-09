@@ -1,0 +1,132 @@
+from queue import Queue
+from threading import Thread
+
+from wrapper import *
+
+
+class _FrameGrabber(Thread):
+    active = True
+    run_forever = False
+    def __init__(self, device_id, frames, interval_ms):
+        super().__init__()
+        self.device_id = device_id
+        self.frames = frames
+        self.run_forever = (frames == -1)
+        self.interval = interval_ms / 1000
+        self.start()
+
+    def run(self):
+        if self.run_forever:
+            start_frame_grab(0x8888)
+            get_device_spectrometer_frame_data(self.device_id, 1, True)
+        else:
+            i = 0
+            while self.active and i < self.frames:
+                start_frame_grab(1)
+                get_device_spectrometer_frame_data(self.device_id, 1, True)
+                time.sleep(self.interval)
+                i+=1
+
+    def kill(self):
+        self.active = False
+        stop_frame_grab()
+
+class WorkMode:
+    NORMAL = 0
+    TRIGGER = 1
+
+class Frame:
+    def __init__(self, row, col, attributes, data_tuple):
+        for key, val in attributes:
+            setattr(self, key, val)
+
+        self.row = row
+        self.col = col
+        self.raw_data = data_tuple[0]
+        self.calibrated_data = data_tuple[1]
+        self.absolute_intensities = data_tuple[2]
+
+def _handle_new_frame(row, col, attributes, data_tuple):
+    frame = Frame(row, col, attributes, data_tuple)
+    _camera_registry[attributes["camera_id"]].add_frame(frame)
+
+install_callback(_handle_new_frame)
+
+_camera_registry = {}
+
+init_device()
+
+_engine_ready = False
+_engine_ready_callback = None
+
+# noinspection PyCallingNonCallable
+def _on_engine_init():
+    global _engine_ready
+    if _engine_ready_callback:
+        _engine_ready_callback()
+    _engine_ready = True
+
+def install_on_engine_ready_callback(callback):
+    if _engine_ready:
+        callback()
+    else:
+        global _engine_ready_callback
+        _engine_ready_callback = callback
+
+# noinspection PyMethodMayBeStatic
+class LineCamera:
+
+    _frame_grabber: _FrameGrabber = None
+    _last_received_frame: Frame = None
+    _buffer: Queue
+
+    def __init__(self, device_id=1, buffer_size=25):
+        self.device_id = device_id
+        self._buffer = Queue(maxsize=buffer_size)
+        init_device()
+        _camera_registry[device_id] = self
+
+    def activate(self):
+        set_device_active_status(self.device_id, True)
+
+    def shutdown(self):
+        set_device_active_status(self.device_id, False)
+
+    def grab_spectrum_frames(self, frames:int =-1, interval_ms=0):
+        if self._frame_grabber and self._frame_grabber.active:
+            raise Exception("User attempted to grab frames before stopping an existing frame grab process")
+
+        self._frame_grabber = _FrameGrabber(self.device_id, frames, interval_ms)
+
+    def stop_spectrum_grab(self):
+        if self._frame_grabber:
+            self._frame_grabber.kill()
+
+    def is_grabbing_frames(self):
+        return self._frame_grabber and self._frame_grabber.active
+
+    def set_exposure(self, exposure_time):
+        set_device_exposure_time(self.device_id, exposure_time)
+
+    def set_work_mode(self, work_mode: int):
+        if work_mode != 0 or work_mode != 1:
+            raise ValueError(f"Expected a value of 0 or 1 and got {work_mode}")
+        set_device_work_mode(self.device_id, work_mode)
+
+    def last_received_frame(self):
+        return self._last_received_frame
+
+    def add_frame(self, frame: Frame):
+        self._buffer.put(frame, block=True)
+
+    def get_frame(self):
+        """
+        Gets a frame from the frame buffer, which is just a Queue under the hood.
+        Items are removed from the buffer in a first-in, first-out manner when get_frame() is called.
+        :return: The last item to be put into the buffer.
+        """
+        return self._buffer.get(block=True)
+
+
+
+

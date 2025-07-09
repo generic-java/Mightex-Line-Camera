@@ -1,0 +1,42 @@
+<?xml version="1.0"?>
+<!DOCTYPE SSE-1304-UWE_13-220916-003 [
+  <!ELEMENT SSE-1304-UWE_13-220916-003 (VER,SLICENUM?,SLICE*)>
+    <!ELEMENT VER (#PCDATA)>
+    <!ELEMENT SLICENUM (#PCDATA)>
+    <!ELEMENT SLICE (STARTROW|ROWHEIGHT|WAVELENGTH|ETC|ETCDATA?|RRC|AIC)*>
+    <!ATTLIST SLICE xmlns ID #REQUIRED>
+      <!ELEMENT STARTROW (#PCDATA)>
+      <!ELEMENT ROWHEIGHT (#PCDATA)>
+      <!ELEMENT WAVELENGTH (coefs_a0,coefs_a1,coefs_a2,coefs_a3,coefs_b0,coefs_b1,coefs_b2,coefs_b3)>
+        <!ELEMENT coefs_a0 (#PCDATA)>
+        <!ELEMENT coefs_a1 (#PCDATA)>
+        <!ELEMENT coefs_a2 (#PCDATA)>
+        <!ELEMENT coefs_a3 (#PCDATA)>
+        <!ELEMENT coefs_b0 (#PCDATA)>
+        <!ELEMENT coefs_b1 (#PCDATA)>
+        <!ELEMENT coefs_b2 (#PCDATA)>
+        <!ELEMENT coefs_b3 (#PCDATA)>
+      <!ELEMENT ETC (ETCGain,slope,polydegree,polycoeffs)>
+        <!ELEMENT ETCGain (#PCDATA)>
+        <!ELEMENT slope (#PCDATA)>
+        <!ELEMENT polydegree (#PCDATA)>
+        <!ELEMENT polycoeffs (A*)>
+          <!ELEMENT A (#PCDATA)>
+      <!ELEMENT ETCDATA (ETCDataCount, CCD_ExpTime_DATA)>
+        <!ELEMENT ETCDataCount (#PCDATA)>
+        <!ELEMENT CCD_ExpTime_DATA (p*)>
+      <!ELEMENT RRC (RRCGain,RRCDATA)>
+        <!ELEMENT RRCGain (#PCDATA)>
+        <!ELEMENT RRCDATA (p*)>
+          <!ELEMENT p (#PCDATA)>
+      <!ELEMENT AIC (AICGain,AICUNIT,AICDATA)>
+        <!ELEMENT AICGain (#PCDATA)>
+        <!ELEMENT AICUNIT (#PCDATA)>
+        <!ELEMENT AICDATA (p*)>
+  ]>
+<SSE-1304-UWE_13-220916-003>
+  <VER>1.1.1</VER>
+  <SLICENUM>1</SLICENUM>
+  <SLICE xmlns="index_1"><STARTROW>0</STARTROW><ROWHEIGHT>1</ROWHEIGHT>
+  </SLICE>
+</SSE-1304-UWE_13-220916-003>
