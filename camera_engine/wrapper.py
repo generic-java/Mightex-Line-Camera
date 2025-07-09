@@ -1,7 +1,8 @@
-from ctypes import *
+import os
 import time
+from ctypes import *
 
-mtsse_dll = WinDLL("./lib64/MT_Spectrometer_SDK.dll")
+mtsse_dll = WinDLL(os.path.join(str(__file__).replace("wrapper.py", ""), "lib64/MT_Spectrometer_SDK.dll"))
 
 PIXELS = 3648
 received_data_callback = lambda _, __, ___, ____: None

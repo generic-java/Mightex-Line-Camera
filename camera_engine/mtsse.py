@@ -1,7 +1,9 @@
-from queue import Queue
+from collections import deque
 from threading import Thread
 
-from wrapper import *
+import numpy as np
+
+from .wrapper import *
 
 
 class _FrameGrabber(Thread):
@@ -37,14 +39,18 @@ class WorkMode:
 
 class Frame:
     def __init__(self, row, col, attributes, data_tuple):
-        for key, val in attributes:
-            setattr(self, key, val)
+        #print(attributes)
+        #for key, val in attributes:
+        #    setattr(self, key, val)
 
         self.row = row
         self.col = col
-        self.raw_data = data_tuple[0]
-        self.calibrated_data = data_tuple[1]
-        self.absolute_intensities = data_tuple[2]
+        self.raw_data = np.array(data_tuple[0])
+        self.calibrated_data = np.array(data_tuple[1])
+        self.absolute_intensities = np.array(data_tuple[2])
+
+    def __eq__(self, other):
+        return isinstance(other, Frame) and self.raw_data == other.raw_data and self.calibrated_data == other.calibrated_data and self.absolute_intensities == other.absolute_intensities
 
 def _handle_new_frame(row, col, attributes, data_tuple):
     frame = Frame(row, col, attributes, data_tuple)
@@ -54,37 +60,20 @@ install_callback(_handle_new_frame)
 
 _camera_registry = {}
 
-init_device()
-
-_engine_ready = False
-_engine_ready_callback = None
-
-# noinspection PyCallingNonCallable
-def _on_engine_init():
-    global _engine_ready
-    if _engine_ready_callback:
-        _engine_ready_callback()
-    _engine_ready = True
-
-def install_on_engine_ready_callback(callback):
-    if _engine_ready:
-        callback()
-    else:
-        global _engine_ready_callback
-        _engine_ready_callback = callback
-
 # noinspection PyMethodMayBeStatic
 class LineCamera:
 
     _frame_grabber: _FrameGrabber = None
     _last_received_frame: Frame = None
-    _buffer: Queue
 
-    def __init__(self, device_id=1, buffer_size=25):
+    def __init__(self, activate=True, device_id=1, buffer_size=25):
         self.device_id = device_id
-        self._buffer = Queue(maxsize=buffer_size)
-        init_device()
+        self._buffer = deque(maxlen=buffer_size)
+        self.set_work_mode(WorkMode.NORMAL)
+        install_device_frame_hooker(device_id, receive_frame)
         _camera_registry[device_id] = self
+        if activate:
+            self.activate()
 
     def activate(self):
         set_device_active_status(self.device_id, True)
@@ -109,7 +98,7 @@ class LineCamera:
         set_device_exposure_time(self.device_id, exposure_time)
 
     def set_work_mode(self, work_mode: int):
-        if work_mode != 0 or work_mode != 1:
+        if work_mode != 0 and work_mode != 1:
             raise ValueError(f"Expected a value of 0 or 1 and got {work_mode}")
         set_device_work_mode(self.device_id, work_mode)
 
@@ -117,7 +106,7 @@ class LineCamera:
         return self._last_received_frame
 
     def add_frame(self, frame: Frame):
-        self._buffer.put(frame, block=True)
+        self._buffer.append(frame)
 
     def get_frame(self):
         """
@@ -125,7 +114,13 @@ class LineCamera:
         Items are removed from the buffer in a first-in, first-out manner when get_frame() is called.
         :return: The last item to be put into the buffer.
         """
-        return self._buffer.get(block=True)
+        if self._buffer:
+            frame = self._buffer.popleft()
+            if not self._buffer:
+                self._buffer.append(frame)
+            return frame
+        else:
+            return None
 
 
 

@@ -1,36 +1,72 @@
-import matplotlib.pyplot as plt
-import numpy as np
+class BlitManager:
+    """
+    :source: https://matplotlib.org/stable/users/explain/animations/blitting.html
+    """
+    def __init__(self, canvas, animated_artists=()):
+        """
+        Parameters
+        ----------
+        canvas : FigureCanvasAgg
+            The canvas to work with, this only works for subclasses of the Agg
+            canvas which have the `~FigureCanvasAgg.copy_from_bbox` and
+            `~FigureCanvasAgg.restore_region` methods.
 
-class RealTimePlot:
+        animated_artists : Iterable[Artist]
+            List of the artists to manage
+        """
+        self.canvas = canvas
+        self._background = None
+        self._artists = []
 
-    def __init__(self, x_data=None, y_data=None):
-        plt.ion()
-        self.x_data = x_data if x_data is not None else np.array([])
-        self.y_data = y_data if y_data is not None else np.array([])
-        self.figure, self.axes = plt.subplots()
-        (self.line,) = self.axes.plot(self.x_data, self.y_data, animated=True) # Because animated=True, this will not show until we request the artist to be drawn
-        plt.show()
+        for artist in animated_artists:
+            self.add_artist(artist)
+        # grab the background on every draw
+        canvas.mpl_connect("draw_event", self.on_draw)
 
-        plt.pause(0.1) # I'm unsure if this is necessary
+    def on_draw(self, event):
+        """Callback to register with 'draw_event'."""
+        if event is not None:
+            if event.canvas != self.canvas:
+                raise RuntimeError
+        self._background = self.canvas.copy_from_bbox(self.canvas.figure.bbox)
+        self._draw_animated()
 
-        self.background = self.figure.canvas.copy_from_bbox(self.figure.bbox)
-        self.axes.draw_artist(self.line)
-        self.figure.canvas.blit(self.figure.bbox)
+    def add_artist(self, artist):
+        """
+        Add an artist to be managed.
 
-    def update_data(self, x_data, y_data):
-        self.update_x_data(x_data)
-        self.update_y_data(y_data)
+        Parameters
+        ----------
+        artist : Artist
 
-    def update_x_data(self, x_data):
-        self.x_data = x_data
+            The artist to be added.  Will be set to 'animated' (just
+            to be safe).  *art* must be in the figure associated with
+            the canvas this class is managing.
 
-    def update_y_data(self, y_data):
-        self.y_data = y_data
+        """
+        if artist.figure != self.canvas.figure:
+            raise RuntimeError
+        artist.set_animated(True)
+        self._artists.append(artist)
 
-    def redraw(self):
-        self.figure.canvas.restore_region(self.background)
-        self.line.set_xdata(self.x_data)
-        self.line.set_ydata(self.y_data)
-        self.axes.draw_artist(self.line)
-        self.figure.canvas.blit(self.figure.bbox) # blit updates a specified part of the figure (in this case everything within the figure's bounding box by pushing the RGBA buffer to the GUI and displaying it)
-        self.figure.canvas.flush_events()
+    def _draw_animated(self):
+        """Draw all the animated artists."""
+        for a in self._artists:
+            self.canvas.figure.draw_artist(a)
+
+    def update(self):
+        """Update the screen with animated artists."""
+        cv = self.canvas
+        fig = self.canvas.figure
+        # paranoia in case we missed the draw event,
+        if self._background is None:
+            self.on_draw(None)
+        else:
+            # restore the background
+            cv.restore_region(self._background)
+            # draw all the animated artists
+            self._draw_animated()
+            # update the GUI state
+            self.canvas.blit(fig.bbox)
+        # let the GUI event loop process anything it has to do
+        self.canvas.flush_events()
