@@ -2,9 +2,20 @@
   <dictionary name="project">
     <words>
       <w>argtypes</w>
+      <w>coeff</w>
+      <w>fname</w>
+      <w>fwhm</w>
+      <w>geelhood</w>
       <w>inten</w>
+      <w>intens</w>
+      <w>mightex</w>
       <w>mtsse</w>
+      <w>pohl</w>
+      <w>tickline</w>
+      <w>txtpad</w>
       <w>uninit</w>
+      <w>voigt</w>
+      <w>voigts</w>
     </words>
   </dictionary>
 </component>

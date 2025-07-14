@@ -1,3 +1,3 @@
 from .wrapper import init_device
 
-init_device()
+print("Loaded engine module.")

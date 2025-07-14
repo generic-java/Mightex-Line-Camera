@@ -1,10 +1,10 @@
-from collections import deque
 from threading import Thread
 
 import numpy as np
 
 from .wrapper import *
 
+PIXELS = 3648
 
 class _FrameGrabber(Thread):
     active = True
@@ -60,20 +60,29 @@ install_callback(_handle_new_frame)
 
 _camera_registry = {}
 
+def start_engine():
+    init_device()
+
+def teardown_engine():
+    uninit_device()
+
 # noinspection PyMethodMayBeStatic
 class LineCamera:
 
     _frame_grabber: _FrameGrabber = None
     _last_received_frame: Frame = None
+    _frame_callback = None
 
-    def __init__(self, activate=True, device_id=1, buffer_size=25):
+    def __init__(self, activate=True, device_id=1):
         self.device_id = device_id
-        self._buffer = deque(maxlen=buffer_size)
         self.set_work_mode(WorkMode.NORMAL)
         install_device_frame_hooker(device_id, receive_frame)
         _camera_registry[device_id] = self
         if activate:
             self.activate()
+
+    def add_frame_callback(self, callback):
+        self._frame_callback = callback
 
     def activate(self):
         set_device_active_status(self.device_id, True)
@@ -102,25 +111,15 @@ class LineCamera:
             raise ValueError(f"Expected a value of 0 or 1 and got {work_mode}")
         set_device_work_mode(self.device_id, work_mode)
 
+    def has_frame(self):
+        return self._last_received_frame
+
     def last_received_frame(self):
         return self._last_received_frame
 
     def add_frame(self, frame: Frame):
-        self._buffer.append(frame)
-
-    def get_frame(self):
-        """
-        Gets a frame from the frame buffer, which is just a Queue under the hood.
-        Items are removed from the buffer in a first-in, first-out manner when get_frame() is called.
-        :return: The last item to be put into the buffer.
-        """
-        if self._buffer:
-            frame = self._buffer.popleft()
-            if not self._buffer:
-                self._buffer.append(frame)
-            return frame
-        else:
-            return None
+        self._last_received_frame = frame
+        self._frame_callback(frame)
 
 
 

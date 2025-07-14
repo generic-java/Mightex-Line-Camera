@@ -1,0 +1,85 @@
+QMenuBar {
+background-color: #343434;
+color: #6aee35;
+border: none;
+font-family: "Roboto";
+font-size: 14px;
+}
+
+QMenuBar::item:selected {
+background-color: #6aee35;
+color: #343434;
+}
+
+QMenuBar::item {
+padding: 5px 10px 5px 10px;
+margin-right: 5px;
+}
+
+QMenu {
+padding: 0px;
+border: none;
+background-color: #343434;
+}
+
+QMenu::item:selected {
+background-color: #6aee35;
+color: #343434;
+}
+
+QMenu::item {
+background-color: #343434;
+color: #6aee35;
+width: 125px;
+padding: 8px;
+border: none;
+font-family: "Roboto";
+font-size: 13px;
+}
+
+QToolBar {
+border: none;
+background-color: #343434;
+color: #6aee35;
+}
+
+QToolButton {
+margin-right: 5px;
+}
+
+QMainWindow {
+background-color: #4b6b71;
+}
+
+#load-spectrum-dialog {
+background-color: #343434;
+color: #6aee35;
+}
+
+QPushButton {
+background-color: #6aee35;
+color: #343434;
+padding: 5px 10px 5px 10px;
+border: none;
+font-family: "Roboto";
+font-size: 14px;
+}
+
+QPushButton:hover {
+cursor: pointing-hand;
+}
+
+QLineEdit {
+background-color: #343434;
+color: #6aee35;
+font-family: "Roboto";
+font-size: 14px;
+border: 2px solid #6aee35;
+border-radius: 5px;
+}
+
+QLabel {
+color: #6aee35;
+font-family: "Roboto";
+font-size: 14px;
+}

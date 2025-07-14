@@ -1,39 +1,29 @@
-import queue
+import sys
 
-import matplotlib.pyplot as plt
+from PyQt6.QtGui import QFontDatabase
+from PyQt6.QtWidgets import QApplication
 
 from camera_engine.mtsse import *
-from plottools import BlitManager
+from gui import Window, SplashScreen
 
-x = np.arange(0, PIXELS, 1)
-queue = queue.Queue(maxsize=10)
-
-for i in range(10):
-    queue.put(np.zeros_like(x))
 
 def main():
+    app = QApplication(sys.argv)
+    splash = SplashScreen()
+    splash.show()
+    QFontDatabase.addApplicationFont("./res/fonts/aharoni/ahronbd.ttf")
+    QFontDatabase.addApplicationFont("./res/fonts/roboto/static/Roboto-SemiBold.ttf")
+
+    #start_engine()
     print("Camera engine initialized.")
-
-    figure, axes = plt.subplots()
-    axes.set_xlim(-182.35, 3829.25)
-    axes.set_ylim(800, 65535)
-    figure.set_size_inches(12, 6)
-    line, = axes.plot([], [])
-
-    plt.show(block=False)
-    plt.pause(0.1)
-
-    blit_manager = BlitManager(figure.canvas, (line,))
+    splash.close()
 
     camera = LineCamera()
-    camera.grab_spectrum_frames()
+    window = Window(camera)
 
-    while True:
-        frame = camera.get_frame()
-        if frame:
-            line.set_data(x, frame.raw_data)
-        blit_manager.update()
-        plt.pause(0.01)
+    window.show()
+    app.exec()
+    teardown_engine()
 
 
 if __name__ == "__main__":
