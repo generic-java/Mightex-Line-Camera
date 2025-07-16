@@ -57,12 +57,11 @@ def read_nist_data(fpath, wavelength_min, wavelength_max, intensity_fraction, fu
     obs_wl_air_id = "obs_wl_air(nm)"
     obs_wl_vac_id = "obs_wl_vac(nm)"
 
-
-
     on_header = True
     with open(fpath) as file:
         if _invalid_nist and file.read() == _invalid_nist:
             raise AttributeError
+        file.seek(0) # reset current read position to 0 bytes from start of file
         reader = csv.reader(file, delimiter = "\t")
         for line in reader:
             if on_header:
@@ -110,6 +109,14 @@ def load_waves(fpath: str, row_start=0, wavelength_col=0, intensity_col=0, delim
                 line_num += 1
 
     return np.array(wavelengths), np.array(intensities)
+
+def save_waves(fpath, first_column, second_column, delimiter=","):
+    with open(fpath, "w") as file:
+        data = np.transpose(np.column_stack((first_column, second_column)))
+        text = ""
+        for row in data:
+            text += str(row[0]) + delimiter + str(row[1]) + "\n"
+        file.write(text)
 
 def main():
     wavelengths, intensities = read_nist_data(r"C:\Users\power\Downloads\waves.txt", 400, 700, 0.1, 2)

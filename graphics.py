@@ -25,6 +25,7 @@ def shape_lines(data_x, wavelengths, intensities, intensity_fraction, full_width
     y = []
     for x in data_x:
         y.append(intensity_at_point(x, wavelengths, intensities, intensity_fraction, full_width_half_max))
+
     return np.array(y) / np.max(y)
     
 

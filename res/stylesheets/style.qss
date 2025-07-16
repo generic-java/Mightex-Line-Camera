@@ -51,18 +51,23 @@ QMainWindow {
 background-color: #4b6b71;
 }
 
-#load-spectrum-dialog {
+QDialog {
 background-color: #343434;
 color: #6aee35;
 }
 
-QPushButton {
+SimpleButton {
 background-color: #6aee35;
 color: #343434;
 padding: 5px 10px 5px 10px;
 border: none;
+border-radius: 5px;
 font-family: "Roboto";
 font-size: 14px;
+}
+
+IconButton {
+background-color: transparent;
 }
 
 QPushButton:hover {
@@ -80,6 +85,81 @@ border-radius: 5px;
 
 QLabel {
 color: #6aee35;
+font-family: "Roboto";
+font-size: 14px;
+}
+
+QScrollArea {
+background-color: transparent;
+border: none;
+}
+
+#map-pixels-container {
+background-color: transparent;
+border: none;
+}
+
+QRadioButton {
+color: #6aee35;
+font-family: "Roboto";
+font-size: 14px;
+}
+
+QRadioButton::indicator {
+border: 2px solid #6aee35;
+border-radius: 5px;
+}
+
+QRadioButton::indicator::checked {
+background-color: #6aee35;
+}
+
+QRadioButton::indicator::unchecked {
+background-color: transparent;
+}
+
+QScrollBar {
+border: none;
+background-color: transparent;
+width: 12px;
+margin: 0px 0px 0px 0px;
+}
+
+QScrollBar::handle {
+background-color: #6aee35;
+min-height: 20px;
+border-radius: 6px;
+}
+
+/* Hide arrows */
+QScrollBar::add-line,
+QScrollBar::sub-line {
+height: 0px;
+width: 0px;
+background: none;
+border: none;
+}
+
+/* Fill the areas not covered by the handle */
+QScrollBar::add-page,
+QScrollBar::sub-page {
+    background: #343434;
+}
+
+MenuSelectorButton {
+background-color: #6aee35;
+color: #343434;
+padding: 5px 10px 5px 10px;
+border: none;
+font-family: "Roboto";
+font-size: 14px;
+}
+
+#wl-column-readout {
+background-color: #6aee35;
+color: #343434;
+padding: 5px 10px 5px 10px;
+border: none;
 font-family: "Roboto";
 font-size: 14px;
 }
