@@ -1,3 +1,5 @@
+import re
+
 import numpy as np
 from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtWidgets import QLabel, QWidget, QVBoxLayout, QHBoxLayout
@@ -10,7 +12,7 @@ from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 from scipy.optimize import curve_fit
 
-from app_widgets import ArrowImmuneRadioButton
+from app_widgets import ArrowImmuneRadioButton, LabeledLineEdit
 from camera_engine.mtsse import Frame, LineCamera, PIXELS
 
 
@@ -106,15 +108,18 @@ class DataHandler(QObject):
     def get_signal(self):
         return self._signal
 
-fitting_params = (0, 1, 0, 0)
+primary_fitting_params = (0, 1, 0, 0)
+reference_fitting_params = (0, 1, 0, 0)
 
 class AxisUnitType:
     PIXEL = 0
     WAVELENGTH = 1
-    unit_type = PIXEL
 
-_primary_unit = AxisUnitType()
-_reference_unit = AxisUnitType()
+    def __init__(self, unit_type):
+        self.unit_type = unit_type
+
+_primary_unit = AxisUnitType(AxisUnitType.PIXEL)
+_reference_unit = AxisUnitType(AxisUnitType.WAVELENGTH)
 
 class CrosshairReadout(QLabel):
 
@@ -147,8 +152,8 @@ class CrosshairReadout(QLabel):
 
 
 class Crosshair:
-    pixel_x = 0
-    pixel_y = 0
+    index_x = 0
+    index_y = 0
     x_line = None
     y_line = None
     x_multiplier = 1
@@ -169,18 +174,18 @@ class Crosshair:
         axes.add_line(self.horizontal)
         self.horizontal.set_animated(True)
         self.horizontal.set_color(color)
-        self.set_position_pixels(0, 0)
+        self.set_position_indices(0, 0)
 
         canvas.mpl_connect("draw_event", self.on_resize)
 
-    def set_position_pixels(self, x, y):
+    def set_position_indices(self, index_x, index_y):
         x_min, x_max = self.axes.get_xlim()
         y_min, y_max = self.axes.get_ylim()
-        self.pixel_x = clamp(0, PIXELS, x)
-        self.pixel_y = y
-        self.crosshair_readout.update_values(self.pixel_x, cubic(self.pixel_x, *fitting_params), self.pixel_y)
-        display_x = clamp(x_min, x_max, cubic(x, *fitting_params) if self.unit.unit_type == AxisUnitType.WAVELENGTH else x)
-        display_y = clamp(y_min, y_max, y)
+        self.index_x = clamp(0, PIXELS, index_x)
+        self.index_y = index_y
+        self.crosshair_readout.update_values(self.index_x, cubic(self.index_x, *primary_fitting_params), self.index_y)
+        display_x = clamp(x_min, x_max, cubic(index_x, *primary_fitting_params) if self.unit.unit_type == AxisUnitType.WAVELENGTH else index_x)
+        display_y = clamp(y_min, y_max, index_y)
         extent_x = self.size / 2 * self.x_multiplier
         extent_y = self.size / 2 * self.y_multiplier
         vertical_y = np.arange(display_y - extent_y, display_y + extent_y, 0.1)
@@ -190,10 +195,10 @@ class Crosshair:
 
     def refresh(self):
         self.on_resize()
-        self.set_position_pixels(self.pixel_x, self.pixel_y)
+        self.set_position_indices(self.index_x, self.index_y)
 
-    def get_position_pixels(self):
-        return self.pixel_x, self.pixel_y
+    def get_position_indices(self):
+        return self.index_x, self.index_y
 
     def on_resize(self, event=None):
         x_left, x_right = self.axes.get_xlim()
@@ -203,7 +208,7 @@ class Crosshair:
         width_pixels, height_pixels = bbox.size
         self.x_multiplier = (x_right - x_left) / width_pixels
         self.y_multiplier = (y_top - y_bottom) / height_pixels
-        self.set_position_pixels(self.pixel_x, self.pixel_y)
+        self.set_position_indices(self.index_x, self.index_y)
 
     def get_artists(self):
         return self.vertical, self.horizontal
@@ -215,13 +220,18 @@ class Crosshair:
 class RealTimePlot(QWidget):
 
     style = {
-        "background": "#4b6b71",
+        "background": "#343434",
         "color": "#6aee35"
     }
 
+    PRIMARY = 0
+    REFERENCE = 1
+
     def __init__(self, data_handler: DataHandler, **kwargs):
         super().__init__()
+        self.selected_plot = RealTimePlot.PRIMARY
         self.primary_unit = _primary_unit
+        self.reference_unit = _reference_unit
         self.style.update(kwargs)
         self.x = np.arange(0, PIXELS, 1)
         self.figure = Figure()
@@ -237,10 +247,10 @@ class RealTimePlot(QWidget):
 
         self.primary_axes = self.figure.add_subplot()
         self.primary_axes.set_xlim(0, PIXELS)
-        self.primary_axes.set_ylim(800, 65535)
+        self.primary_axes.set_ylim(0, 65535)
         self.primary_axes.grid(True, color=color)
 
-        self.reference_axes = self.primary_axes.twinx()
+        self.reference_axes = self.figure.add_subplot()
         self.reference_axes.set_ylim(0, 1.2)
 
         self.figure.set_size_inches(12, 6)
@@ -249,28 +259,59 @@ class RealTimePlot(QWidget):
         self.reference_line, = self.reference_axes.plot([], [])
         self.reference_data = (np.array([]), np.array([]))
 
-        # Crosshair readout
-        self.crosshair_readout = CrosshairReadout(0, 0, 0, self.primary_unit)
+        # Primary crosshair readout
+        self.primary_crosshair_readout = CrosshairReadout(0, 0, 0, self.primary_unit)
 
-        # Crosshair
-        self.crosshair = Crosshair(self.crosshair_readout, self.canvas, self.primary_axes, self.primary_unit)
+        # Primary crosshair
+        self.primary_crosshair = Crosshair(self.primary_crosshair_readout, self.canvas, self.primary_axes, self.primary_unit)
+
+        # Reference crosshair readout
+        self.reference_crosshair_readout = CrosshairReadout(0, 0, 0, self.reference_unit)
+
+        # Reference crosshair
+        self.reference_crosshair = Crosshair(self.primary_crosshair_readout, self.canvas, self.reference_axes, self.reference_unit)
+
         # noinspection PyTypeChecker
         self.canvas.mpl_connect("button_press_event", self.onclick)
 
-        # Unit control
-        self.unit_control = WavelengthPixelButton(self)
+        # Primary unit control
+        self.primary_unit_control = WavelengthPixelButton(self)
+
+        # Reference unit control
+        self.reference_unit_control = WavelengthPixelButton(self)
+
+        # Primary y limits
+        self.primary_y_min = LabeledLineEdit("Min y:", on_edit=self.relim_primary_y, max_text_width=75)
+        self.primary_y_max = LabeledLineEdit("Max y:", on_edit=self.relim_primary_y, max_text_width=75)
+        self.refresh_primary_y_bounds_control()
+
+        # Reference x limits
+        self.reference_x_min = LabeledLineEdit("Min x:", on_edit=self.relim_reference_x, max_text_width=75)
+        self.reference_x_max = LabeledLineEdit("Max x:", on_edit=self.relim_reference_x, max_text_width=75)
+        self.refresh_reference_x_bounds_control()
+
+        # Reference y limits
+        self.reference_y_min = LabeledLineEdit("Min y:", on_edit=self.relim_reference_y, max_text_width=75)
+        self.reference_y_max = LabeledLineEdit("Max y:", on_edit=self.relim_reference_y, max_text_width=75)
+        self.refresh_reference_y_bounds_control()
+
+        # Selection control
+        self.selection_control = PlotSelector(self)
 
         # Blit manager
-        self._blit_manager = BlitManager(self.canvas, (self.primary_line, self.reference_line, *self.crosshair.get_artists()))
+        self._blit_manager = BlitManager(self.canvas, (self.primary_line, self.reference_line, *self.primary_crosshair.get_artists(), *self.reference_crosshair.get_artists()))
 
         # style
         self.primary_axes.patch.set_facecolor(self.style["background"])
+        self.reference_axes.patch.set_facecolor("#00000000")
+        self.reference_axes.yaxis.tick_right()
+        self.reference_axes.xaxis.tick_top()
         self.figure.patch.set_facecolor(self.style["background"])
 
         self.primary_axes.spines["bottom"].set_color(color)
-        self.primary_axes.spines["top"].set_color(color)
+        self.primary_axes.spines["top"].set_color("#00000000")
         self.primary_axes.spines["left"].set_color(color)
-        self.primary_axes.spines["right"].set_color(color)
+        self.primary_axes.spines["right"].set_color("#00000000")
         self.primary_axes.xaxis.label.set_color(color)
         self.primary_axes.tick_params(axis="x", colors=color)
         self.primary_axes.tick_params(axis="y", colors=color)
@@ -279,7 +320,7 @@ class RealTimePlot(QWidget):
         self.reference_axes.tick_params(axis="y", colors="orange")
 
         self.reference_axes.spines["bottom"].set_color(color)
-        self.reference_axes.spines["top"].set_color(color)
+        self.reference_axes.spines["top"].set_color("orange")
         self.reference_axes.spines["left"].set_color(color)
         self.reference_axes.spines["right"].set_color("orange")
         self.reference_axes.xaxis.label.set_color("orange")
@@ -293,7 +334,7 @@ class RealTimePlot(QWidget):
     def set_primary_line(self, x, y):
         self.primary_data_raw = (x, y)
         if self.primary_unit.unit_type == AxisUnitType.WAVELENGTH:
-            self.primary_line.set_data(cubic(x, *fitting_params), y)
+            self.primary_line.set_data(cubic(x, *primary_fitting_params), y)
         else:
             self.primary_line.set_data(x, y)
         self._blit_manager.update()
@@ -302,7 +343,10 @@ class RealTimePlot(QWidget):
         return self.primary_data_raw
 
     def set_reference_line(self, x,  y):
+        self.reference_axes.set_xlim(np.min(x), np.max(x))
+        self.refresh_reference_x_bounds_control()
         self.reference_line.set_data(x, y)
+        self._blit_manager.force_refresh()
         self._blit_manager.update()
 
     def get_reference_data(self):
@@ -314,20 +358,23 @@ class RealTimePlot(QWidget):
         self._blit_manager.update()
 
     def move_crosshair(self, increment: int):
-        crosshair_x, _ = self.crosshair.get_position_pixels()
+        crosshair = self.primary_crosshair if self.selected_plot == RealTimePlot.PRIMARY else self.reference_crosshair
+        crosshair_x, _ = crosshair.get_position_indices()
         crosshair_x = int(crosshair_x + increment)
         data_x, data_y = self.primary_data_raw
-        self.crosshair.set_position_pixels(crosshair_x, data_y[crosshair_x])
+        crosshair.set_position_indices(crosshair_x, data_y[crosshair_x])
+        self._blit_manager.force_refresh()
         self._blit_manager.update()
 
     # noinspection PyTypeChecker
     def onclick(self, event):
-        mouse_x = event.xdata
+        crosshair = self.primary_crosshair if self.selected_plot == RealTimePlot.PRIMARY else self.reference_crosshair
+        mouse_x = event.xdata # in plot units
         if mouse_x is None:
             return
-        data_x, data_y = self.primary_line.get_data()
+        data_x, data_y = self.primary_line.get_data() if self.selected_plot == RealTimePlot.PRIMARY else self.reference_line.get_data()
         index = np.abs(mouse_x - data_x).argmin()
-        self.crosshair.set_position_pixels(index, data_y[index])
+        crosshair.set_position_indices(index, data_y[index])
         self._blit_manager.update()
 
     def redraw(self):
@@ -336,44 +383,144 @@ class RealTimePlot(QWidget):
 
     def relim(self):
         if self.primary_unit.unit_type == AxisUnitType.WAVELENGTH:
-            self.primary_axes.set_xlim(cubic(0, *fitting_params), cubic(PIXELS, *fitting_params))
-            self.primary_line.set_xdata(cubic(self.primary_data_raw[0], *fitting_params))
+            self.primary_axes.set_xlim(cubic(0, *primary_fitting_params), cubic(PIXELS, *primary_fitting_params))
+            self.primary_line.set_xdata(cubic(self.primary_data_raw[0], *primary_fitting_params))
         elif self.primary_unit.unit_type == AxisUnitType.PIXEL:
             self.primary_axes.set_xlim(0, PIXELS)
             self.primary_line.set_xdata(self.primary_data_raw[0])
-        self.crosshair.refresh()
-        self.crosshair_readout.display_values()
+        self._refresh_primary()
+
+    def _refresh_primary(self):
+        self.primary_crosshair.refresh()
+        self.primary_crosshair_readout.display_values()
         self._blit_manager.force_refresh()
         self._blit_manager.update()
 
+    def _refresh_reference(self):
+        self.reference_crosshair.refresh()
+        self.reference_crosshair_readout.display_values()
+        self._blit_manager.force_refresh()
+        self._blit_manager.update()
+
+    def update_primary_height(self):
+        try:
+            x_min = float(self.reference_x_min.get_text())
+            x_max = float(self.reference_x_max.get_text())
+            self.reference_axes.set_xlim(x_min, x_max)
+            self._refresh_reference()
+        except Exception as e:
+            print(e)
+
+    def relim_axes(self, line_edit_min: LabeledLineEdit, line_edit_max: LabeledLineEdit, set_lim, refresh_plot):
+        pattern = r"-?[0-9]*\.?[0-9]*"
+        min_text = line_edit_min.get_text()
+        min_val = re.search(pattern, min_text)
+        if min_text and min_val and min_val.group(0) == min_text:
+            min_val = float(min_val.group(0))
+        else:
+            return
+
+        max_text = line_edit_max.get_text()
+        max_val = re.match(pattern, max_text)
+        if max_text and max_val and max_val.group(0) == max_text:
+            max_val = float(max_val.group(0))
+        else:
+            return
+
+        set_lim(min_val, max_val)
+        refresh_plot()
+
+    def relim_primary_y(self):
+        self.relim_axes(self.primary_y_min, self.primary_y_max, self.primary_axes.set_ylim, self._refresh_primary)
+
+    def relim_reference_x(self):
+        try:
+            self.relim_axes(self.reference_x_min, self.reference_x_max, self.reference_axes.set_xlim, self._refresh_reference)
+        except Exception as e:
+            print(e)
+
+
+    def relim_reference_y(self):
+        self.relim_axes(self.reference_y_min, self.reference_y_max, self.reference_axes.set_ylim, self._refresh_reference)
+
     # noinspection PyTupleAssignmentBalance
     def fit(self, pixels, wavelengths):
-        global fitting_params
+        global primary_fitting_params
         self.primary_unit.unit_type = AxisUnitType.WAVELENGTH
         if len(pixels) == 2:
             (a0, a1),_ = curve_fit(linear, pixels, wavelengths)
-            fitting_params = (a0, a1, 0, 0)
+            primary_fitting_params = (a0, a1, 0, 0)
         elif len(pixels) == 3:
             (a0, a1, a2),_ = curve_fit(quadratic, pixels, wavelengths)
-            fitting_params = (a0, a1, a2, 0)
+            primary_fitting_params = (a0, a1, a2, 0)
         else:
-            fitting_params, _ = curve_fit(cubic, pixels, wavelengths)
+            primary_fitting_params, _ = curve_fit(cubic, pixels, wavelengths)
         self.relim()
-        self.unit_control.check_wavelength()
+        self.primary_unit_control.check_wavelength()
+        print(primary_fitting_params) # TODO: replace with visual display
 
     def set_primary_unit(self, unit_type: int):
+        self.set_unit(self.primary_unit, unit_type)
+
+    def set_reference_unit(self, unit_type: int):
+        self.set_unit(self.reference_unit, unit_type)
+
+    def set_unit(self, to_set: AxisUnitType, unit_type: int):
         if not 0 <= unit_type <= 1 or type(unit_type) != int:
             raise ValueError
 
-        if unit_type != self.primary_unit.unit_type:
-            self.primary_unit.unit_type = unit_type
+        if unit_type != to_set.unit_type:
+            to_set.unit_type = unit_type
             self.relim()
 
-    def get_crosshair_readout(self) -> CrosshairReadout:
-        return self.crosshair_readout
+    def get_primary_crosshair_readout(self) -> CrosshairReadout:
+        return self.primary_crosshair_readout
 
-    def get_unit_control(self):
-        return self.unit_control
+    def get_primary_unit_control(self):
+        return self.primary_unit_control
+
+    def get_reference_crosshair_readout(self) -> CrosshairReadout:
+        return self.reference_crosshair_readout
+
+    def get_reference_unit_control(self):
+        return self.reference_unit_control
+
+    def get_selection_control(self):
+        return self.selection_control
+
+    def get_primary_y_min_control(self):
+        return self.primary_y_min
+
+    def get_primary_y_max_control(self):
+        return self.primary_y_max
+
+    def get_reference_x_min_control(self):
+        return self.reference_x_min
+
+    def get_reference_x_max_control(self):
+        return self.reference_x_max
+
+    def get_reference_y_min_control(self):
+        return self.reference_y_min
+
+    def get_reference_y_max_control(self):
+        return self.reference_y_max
+
+    def refresh_primary_y_bounds_control(self):
+        y_min, y_max = self.primary_axes.get_ylim()
+        self.primary_y_min.set_text(f"{y_min:.2f}")
+        self.primary_y_max.set_text(f"{y_max:.2f}")
+
+    def refresh_reference_x_bounds_control(self):
+        x_min, x_max = self.reference_axes.get_xlim()
+        self.reference_x_min.set_text(f"{x_min:.2f}")
+        self.reference_x_max.set_text(f"{x_max:.2f}")
+
+    def refresh_reference_y_bounds_control(self):
+        y_min, y_max = self.reference_axes.get_ylim()
+        self.reference_y_min.set_text(f"{y_min:.2f}")
+        self.reference_y_max.set_text(f"{y_max:.2f}")
+
 
 
 def linear(x, a0, a1):
@@ -411,3 +558,30 @@ class WavelengthPixelButton(QWidget):
 
     def check_pixel(self):
         self._pixel.setChecked(True)
+
+
+class PlotSelector(QWidget):
+    def __init__(self, plot: RealTimePlot):
+        super().__init__()
+        layout = QHBoxLayout()
+        self._primary = ArrowImmuneRadioButton("Primary spectrum", self)
+        self._primary.setChecked(True)
+
+        def toggle():
+            if self._primary.isChecked():
+                plot.set_primary_unit(AxisUnitType.PIXEL)
+            else:
+                plot.set_primary_unit(AxisUnitType.WAVELENGTH)
+
+        self._primary.toggled.connect(toggle)
+        self._reference = ArrowImmuneRadioButton("Reference spectrum", self)
+        layout.addWidget(self._primary)
+        layout.addWidget(self._reference)
+        self.setFixedWidth(200)
+        self.setLayout(layout)
+
+    def check_primary(self):
+        self._reference.setChecked(True)
+
+    def check_reference(self):
+        self._primary.setChecked(True)

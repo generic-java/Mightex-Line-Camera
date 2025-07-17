@@ -143,7 +143,7 @@ border: none;
 /* Fill the areas not covered by the handle */
 QScrollBar::add-page,
 QScrollBar::sub-page {
-    background: #343434;
+background: #343434;
 }
 
 MenuSelectorButton {
@@ -162,4 +162,16 @@ padding: 5px 10px 5px 10px;
 border: none;
 font-family: "Roboto";
 font-size: 14px;
+}
+
+#primary-controls-box {
+border: 2px solid #6aee35;
+background-color: transparent;
+border-radius: 5px;
+}
+
+#reference-controls-box {
+border: 2px solid #6aee35;
+background-color: transparent;
+border-radius: 5px;
 }

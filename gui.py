@@ -2,10 +2,10 @@ import os
 
 import numpy as np
 from PyQt6.QtCore import QSize, Qt
-from PyQt6.QtGui import QPixmap, QAction, QIcon
+from PyQt6.QtGui import QAction, QIcon
 from PyQt6.QtWidgets import *
 
-from app_widgets import FileInput, LabeledLineEdit, SimpleButton, ErrorDialog, IconButton, MenuSelectorButton, FixedSizeSpacer
+from app_widgets import FileInput, LabeledLineEdit, SimpleButton, ErrorDialog, IconButton, MenuSelectorButton, FixedSizeSpacer, PlayStopButton, ToolbarButton
 from camera_engine.mtsse import LineCamera
 from camera_engine.wrapper import PIXELS
 from loadwaves import load_waves, fetch_waves, read_nist_data, save_waves
@@ -21,20 +21,9 @@ class Window(QMainWindow):
         self.setWindowTitle("Mightex Manager")
 
         # All things plotting
-        plot_container = QWidget()
-        plot_container_layout = QVBoxLayout()
-
         self.plot = RealTimePlot(DataHandler(camera))
-        plot_container_layout.addWidget(self.plot)
 
-        # Crosshair readout
-        plot_container_layout.addWidget(self.plot.get_crosshair_readout())
-
-        # Unit control
-        plot_container_layout.addWidget(self.plot.get_unit_control())
-
-        plot_container.setLayout(plot_container_layout)
-        self.setCentralWidget(plot_container)
+        self.setCentralWidget(PlotContainer(self.plot))
 
         # Menu
         self.menubar = self.menuBar()
@@ -106,20 +95,25 @@ class Window(QMainWindow):
 
         # View menu
         view_menu = self.menubar.addMenu("View")
+        view_menu.setMinimumWidth(225)
 
         toggle_toolbar = QAction("Toggle toolbar", self)
         toggle_toolbar.triggered.connect(self.toggle_toolbar)
         view_menu.addAction(toggle_toolbar)
 
-        # Calibrate wavelength submenu
-        calibrate_wavelength = view_menu.addMenu("Calibrate x axis")
-        calibrate_wavelength.setMinimumWidth(175)
+        # Calibrate primary wavelength submenu
+        calibrate_primary_wavelength = view_menu.addMenu("Calibrate primary x axis")
+        calibrate_primary_wavelength.setMinimumWidth(225)
+
+        # Calibrate reference wavelength submenu
+        calibrate_reference_wavelength = view_menu.addMenu("Calibrate reference x axis")
+        calibrate_reference_wavelength.setMinimumWidth(225)
 
         map_pixels_dialog = MaxPixelsDialog(self)
-        calibrate_wavelength_map = calibrate_wavelength.addAction("Map pixels to wavelengths")
+        calibrate_wavelength_map = calibrate_primary_wavelength.addAction("Map pixels to wavelengths")
         calibrate_wavelength_map.triggered.connect(map_pixels_dialog.show)
 
-        calibrate_wavelength_coeff = calibrate_wavelength.addAction("Enter coefficients")
+        calibrate_wavelength_coeff = calibrate_primary_wavelength.addAction("Enter coefficients")
 
 
         # Tools menu
@@ -133,7 +127,7 @@ class Window(QMainWindow):
         self.menubar.addAction(close_button)
 
     def toggle_toolbar(self):
-        _  = self.toolbar.show() if self.toolbar.isHidden() else self.toolbar.hide()
+        _ = self.toolbar.show() if self.toolbar.isHidden() else self.toolbar.hide()
 
     def create_toolbar(self):
         self.toolbar.setMovable(False)
@@ -176,7 +170,7 @@ class Window(QMainWindow):
         self.plot.set_primary_line(wavelengths, intensities)
 
     def load_secondary_spectrum(self, wavelengths, intensities):
-        self.plot.set_secondary_line(wavelengths, intensities)
+        self.plot.set_reference_line(wavelengths, intensities)
 
     def save_settings(self):
         pass
@@ -186,6 +180,95 @@ def load_stylesheet(fname: str):
     with open(os.path.join("./res/stylesheets", fname)) as file:
         return file.read()
 
+class PlotContainer(QWidget):
+    def __init__(self, plot: RealTimePlot):
+        super().__init__()
+        self.plot = plot
+        plot_container_layout = QVBoxLayout()
+
+        plot_container_layout.addWidget(self.plot)
+
+        # Master controls container
+        master_controls_container = QHBoxLayout()
+
+        # Region primary plot controls
+        # Controls container
+        primary_controls_box = QWidget()
+        primary_controls_box.setObjectName("primary-controls-box")
+        primary_controls_container = QVBoxLayout()
+        primary_controls_box.setLayout(primary_controls_container)
+
+        # Crosshair readout
+        primary_crosshair_readout_container = QHBoxLayout()
+        primary_crosshair_readout_container.addWidget(plot.get_primary_crosshair_readout())
+        primary_crosshair_readout_container.addStretch()
+
+        primary_controls_container.addLayout(primary_crosshair_readout_container)
+
+        # Primary y axis bounds
+        primary_y_bounds_container = QHBoxLayout()
+        primary_y_bounds_container.addWidget(self.plot.get_primary_y_min_control())
+        primary_y_bounds_container.addWidget(self.plot.get_primary_y_max_control())
+        primary_y_bounds_container.addStretch()
+        primary_controls_container.addLayout(primary_y_bounds_container)
+
+        # Unit control
+        primary_unit_control_container = QHBoxLayout()
+        unit_control = plot.get_primary_unit_control()
+        primary_unit_control_container.addWidget(unit_control)
+        primary_controls_container.addLayout(primary_unit_control_container)
+        primary_unit_control_container.addStretch()
+
+        primary_controls_box.setFixedSize(QSize(300, 200))
+        # End region
+
+        # Region reference plot controls
+        # Reference controls box
+        reference_controls_box = QWidget()
+        reference_controls_box.setObjectName("reference-controls-box")
+        reference_controls_container = QVBoxLayout()
+        reference_controls_box.setLayout(reference_controls_container)
+
+        # Crosshair readout
+        reference_crosshair_readout_container = QHBoxLayout()
+        reference_crosshair_readout_container.addWidget(plot.get_reference_crosshair_readout())
+        reference_crosshair_readout_container.addStretch()
+
+        reference_controls_container.addLayout(reference_crosshair_readout_container)
+
+        # Reference x axis bounds
+        reference_x_bounds_container = QHBoxLayout()
+        reference_x_bounds_container.addWidget(self.plot.get_reference_x_min_control())
+        reference_x_bounds_container.addWidget(self.plot.get_reference_x_max_control())
+        reference_x_bounds_container.addStretch()
+        reference_controls_container.addLayout(reference_x_bounds_container)
+
+        # Reference y axis bounds
+        reference_y_bounds_container = QHBoxLayout()
+        reference_y_bounds_container.addWidget(self.plot.get_reference_y_min_control())
+        reference_y_bounds_container.addWidget(self.plot.get_reference_y_max_control())
+        reference_y_bounds_container.addStretch()
+        reference_controls_container.addLayout(reference_y_bounds_container)
+
+        # Unit control
+        reference_unit_control_container = QHBoxLayout()
+        reference_unit_control = plot.get_reference_unit_control()
+        reference_unit_control_container.addWidget(reference_unit_control)
+        reference_controls_container.addLayout(reference_unit_control_container)
+        reference_unit_control_container.addStretch()
+
+        reference_controls_box.setFixedSize(QSize(300, 200))
+        # End region
+
+
+        master_controls_container.addWidget(primary_controls_box)
+        master_controls_container.addWidget(reference_controls_box)
+        master_controls_container.addStretch()
+        plot_container_layout.addLayout(master_controls_container)
+        plot_container_layout.addStretch()
+
+
+        self.setLayout(plot_container_layout)
 
 class PixelMapInput(QWidget):
     def __init__(self, removable=True):
@@ -408,7 +491,7 @@ class DownloadFromNISTDialog(QDialog):
 
         vbox = QVBoxLayout()
 
-        self.element_input = LabeledLineEdit("Element:", max_text_width=20)
+        self.element_input = LabeledLineEdit("Element:", max_text_width=30)
         vbox.addWidget(self.element_input)
 
         self.start_wl_input = LabeledLineEdit("Start wavelength:", max_text_width=35)
@@ -457,7 +540,8 @@ class DownloadFromNISTDialog(QDialog):
             self.close()
         except ValueError:
             return
-        except AttributeError:
+        except AttributeError as e:
+            print(e)
             ErrorDialog("NIST could not generate a spectrum based on your inputs")
 
 
@@ -517,41 +601,4 @@ class OpenFromNISTDialog(QDialog):
         except AttributeError:
             ErrorDialog("NIST could not generate a spectrum based on your inputs")
 
-class ToolbarButton(QAction):
 
-    def __init__(self, icon: QIcon, tooltip: str, window, callback=None):
-        super().__init__(icon, tooltip, window)
-        self.setCheckable(False)
-        if callback:
-            self.triggered.connect(callback)
-
-class PlayStopButton(ToolbarButton):
-
-    _play_icon = None
-    _stop_icon = None
-
-    def __init__(self, tooltip: str, window, play_callback, stop_callback):
-        self._play_icon = QIcon("./res/icons/play.png")
-        self._stop_icon = QIcon("./res/icons/stop.png")
-        super().__init__(self._play_icon, tooltip, window)
-        self._play_callback = play_callback
-        self._stop_callback = stop_callback
-        self._playing = False
-        self.triggered.connect(self.set_state)
-
-    def set_state(self):
-        self._playing = not self._playing
-        if self._playing:
-            self._play_callback()
-            self.setIcon(self._stop_icon)
-            self.setToolTip("Stop acquisition")
-        else:
-            self._stop_callback()
-            self.setIcon(self._play_icon)
-            self.setToolTip("Acquire continuous spectrum")
-
-
-class SplashScreen(QSplashScreen):
-    fpath: str = "./res/splash/splash screen.png"
-    def __init__(self):
-        super().__init__(QPixmap(self.fpath))

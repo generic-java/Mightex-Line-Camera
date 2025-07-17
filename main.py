@@ -3,8 +3,9 @@ import sys
 from PyQt6.QtGui import QFontDatabase
 from PyQt6.QtWidgets import QApplication
 
+from app_widgets import SplashScreen
 from camera_engine.mtsse import *
-from gui import Window, SplashScreen, load_stylesheet
+from gui import Window, load_stylesheet
 
 
 def main():
@@ -16,6 +17,7 @@ def main():
     QFontDatabase.addApplicationFont("./res/fonts/roboto/static/Roboto-SemiBold.ttf")
 
     start_engine()
+    #time.sleep(5)
     print("Camera engine initialized.")
     splash.close()
 

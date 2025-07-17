@@ -66,9 +66,10 @@ def start_engine():
 def teardown_engine():
     uninit_device()
 
-# noinspection PyMethodMayBeStatic
+
 class LineCamera:
 
+    _default_exposure_time: int = 50
     _frame_grabber: _FrameGrabber = None
     _last_received_frame: Frame = None
     _frame_callback = None
@@ -86,6 +87,7 @@ class LineCamera:
 
     def activate(self):
         set_device_active_status(self.device_id, True)
+        self.set_exposure_ms(LineCamera._default_exposure_time)
 
     def shutdown(self):
         set_device_active_status(self.device_id, False)
@@ -103,8 +105,11 @@ class LineCamera:
     def is_grabbing_frames(self):
         return self._frame_grabber and self._frame_grabber.active
 
-    def set_exposure(self, exposure_time):
-        set_device_exposure_time(self.device_id, exposure_time)
+    def set_exposure_microseconds(self, exposure_time_microseconds):
+        set_device_exposure_time(self.device_id, exposure_time_microseconds)
+
+    def set_exposure_ms(self, exposure_time_ms):
+        self.set_exposure_microseconds(exposure_time_ms * 1000)
 
     def set_work_mode(self, work_mode: int):
         if work_mode != 0 and work_mode != 1:

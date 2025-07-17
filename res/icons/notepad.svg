@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   version="1.1"
+   id="svg1"
+   width="626"
+   height="626"
+   viewBox="0 0 626 626"
+   sodipodi:docname="notepad.svg"
+   inkscape:export-filename="notepad.png"
+   inkscape:export-xdpi="96"
+   inkscape:export-ydpi="96"
+   inkscape:version="1.4.2 (f4327f4, 2025-05-13)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs1" />
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     showgrid="false"
+     inkscape:zoom="0.50435013"
+     inkscape:cx="-84.266857"
+     inkscape:cy="294.43831"
+     inkscape:window-width="1920"
+     inkscape:window-height="1137"
+     inkscape:window-x="-8"
+     inkscape:window-y="-8"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="g1"
+     inkscape:export-bgcolor="#ffffffff" />
+  <g
+     inkscape:groupmode="layer"
+     inkscape:label="Image"
+     id="g1">
+    <path
+       style="fill:none;stroke:#6aee35;stroke-width:77.3188;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-opacity:1"
+       d="m 113.61035,57.685485 c 0,511.299605 0,518.193535 0,518.193535 404.44374,0 404.44374,0 404.44374,0 0,-404.44373 0,-407.89072 0,-407.89072 C 407.17677,57.110998 407.17677,57.110998 407.17677,57.110998 115.90833,55.387518 113.61035,57.685485 113.61035,57.685485 Z"
+       id="path1" />
+    <path
+       style="fill:none;stroke:#6aee35;stroke-width:77.8933;stroke-dasharray:none;stroke-opacity:1"
+       d="M 354.14131,40.936256 352.67528,216.86917 H 534.59916"
+       id="path2"
+       sodipodi:nodetypes="ccc" />
+    <rect
+       style="fill:#ffffff;fill-opacity:1;stroke:none;stroke-width:15.9708;stroke-dasharray:none;stroke-opacity:1"
+       id="rect2"
+       width="557.14868"
+       height="244.1053"
+       x="44.781528"
+       y="264.75284" />
+    <path
+       style="font-weight:bold;font-size:265.694px;font-family:'Yu Gothic';-inkscape-font-specification:'Yu Gothic, Bold';fill:#6aee35;stroke:#6aee35;stroke-width:26.2067;stroke-dasharray:none;stroke-opacity:1"
+       d="m 227.21057,345.34167 -33.22382,7.69099 q -7.31419,-39.75645 -41.4058,-39.75645 -24.17404,0 -37.3148,20.58817 -12.14901,18.93163 -12.14901,51.5887 0,37.15333 15.74412,56.43993 13.0168,15.85524 33.71969,15.85524 35.20733,0 43.38931,-40.22972 l 32.35603,9.46582 q -15.12427,55.96665 -75.99327,55.96665 -41.65374,0 -64.836035,-28.75243 -20.702897,-25.67603 -20.702897,-68.39052 0,-49.10393 26.777407,-75.4899 22.686415,-22.24467 58.761525,-22.24467 31.98411,0 52.06717,17.27512 17.10778,14.79033 22.81038,39.99307 z m 161.03632,-10.17575 -33.22381,8.63756 q -7.68611,-30.7639 -35.08335,-30.7639 -16.61192,0 -25.41375,7.45432 -7.43816,6.38943 -7.43816,17.03847 0,13.25215 8.55389,20.11487 7.81007,6.15278 27.64519,11.35897 l 10.41343,2.95808 q 34.58748,8.99252 47.35633,23.54622 10.28946,11.83227 10.28946,31.94713 0,27.33255 -20.33098,42.12288 -18.59542,13.60712 -50.82748,13.60712 -31.11633,0 -50.45557,-13.72544 -17.47969,-12.42388 -23.9261,-35.02352 l 32.72793,-9.93911 q 4.09099,17.39344 15.99206,26.26764 10.28947,7.69098 24.91786,7.69098 37.68672,0 37.68672,-26.85926 0,-13.48878 -8.30595,-20.11486 -8.05802,-6.50774 -30.12458,-12.42388 l -10.1655,-2.83974 q -32.85191,-9.3475 -45.12488,-23.78288 -10.28947,-12.06891 -10.28947,-32.77539 0,-23.78286 19.33924,-38.09991 17.72763,-13.25214 46.48855,-13.25214 53.67877,0 69.29892,46.85579 z m 181.36733,-43.66108 -60.24915,188.0148 h -42.64549 l -59.62931,-188.0148 h 36.81893 l 25.66168,88.38707 q 0.99175,3.43136 18.47145,69.57376 h 3.5951 q 10.04153,-40.34805 18.22351,-68.62718 l 25.90962,-89.33365 z"
+       id="text3"
+       aria-label="CSV" />
+  </g>
+</svg>

@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="297mm"
+   height="210mm"
+   viewBox="0 0 297 210"
+   version="1.1"
+   id="svg1"
+   inkscape:version="1.4.2 (f4327f4, 2025-05-13)"
+   sodipodi:docname="splash screen.svg"
+   inkscape:export-filename="splash screen.png"
+   inkscape:export-xdpi="42.760944"
+   inkscape:export-ydpi="42.760944"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:xlink="http://www.w3.org/1999/xlink"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:document-units="mm"
+     inkscape:zoom="0.56252586"
+     inkscape:cx="175.10306"
+     inkscape:cy="317.31875"
+     inkscape:window-width="1920"
+     inkscape:window-height="1137"
+     inkscape:window-x="-8"
+     inkscape:window-y="-8"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="layer1" />
+  <defs
+     id="defs1">
+    <linearGradient
+       id="linearGradient8"
+       inkscape:collect="always">
+      <stop
+         style="stop-color:#2c0382;stop-opacity:1;"
+         offset="0"
+         id="stop9" />
+      <stop
+         style="stop-color:#5e158c;stop-opacity:1;"
+         offset="0.54352939"
+         id="stop10" />
+      <stop
+         style="stop-color:#3e0069;stop-opacity:0.66903913;"
+         offset="1"
+         id="stop1" />
+    </linearGradient>
+    <linearGradient
+       inkscape:collect="always"
+       xlink:href="#linearGradient8"
+       id="linearGradient10"
+       x1="0"
+       y1="105.35811"
+       x2="296.79004"
+       y2="105.35811"
+       gradientUnits="userSpaceOnUse" />
+  </defs>
+  <g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1">
+    <rect
+       style="fill:url(#linearGradient10);fill-opacity:1;stroke:none;stroke-width:11.018;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-opacity:1"
+       id="rect3"
+       width="296.79004"
+       height="209.77553"
+       x="0"
+       y="0.47034875" />
+    <path
+       style="fill:none;fill-opacity:1;stroke:#fffe7c;stroke-width:13.3005;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-opacity:1"
+       d="m 10.121093,179.02487 c 0,0 6.453293,-99.13152 10.848812,-125.222 4.395519,-26.090475 3.858128,-48.5873335 10.073897,-37.441795 13.124534,23.533688 9.790912,92.783495 27.896947,129.798215 7.24341,14.80793 35.646096,32.44956 35.646096,32.44956 l 15.110845,-44.51413 13.94847,58.2428 22.86,-80.29185 c 0,0 2.29383,10.59473 5.04864,22.97326 1.85746,8.34634 3.92449,17.50364 5.63927,24.77103 3.7183,14.25431 21.47106,37.9558 21.47106,37.9558 l 28.28441,-54.08258 35.25865,46.59423 c 0,0 8.91901,-24.01208 11.64882,-36.48249 2.93694,-13.4167 5.01184,-40.89722 5.01184,-40.89722 18.73876,38.30337 17.05701,31.32486 26.34712,39.10587"
+       id="path1"
+       sodipodi:nodetypes="czssccccsccccacc" />
+    <text
+       xml:space="preserve"
+       style="font-style:normal;font-variant:normal;font-weight:bold;font-stretch:condensed;font-size:56.6674px;font-family:'Agency FB';-inkscape-font-specification:'Agency FB, Bold Condensed';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;text-align:start;writing-mode:lr-tb;direction:ltr;text-anchor:start;fill:#35eec4;fill-opacity:1;stroke:#000000;stroke-width:196.649;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none"
+       x="203.67433"
+       y="60.024117"
+       id="text1"
+       transform="scale(1.4406906,0.69411157)"><tspan
+         sodipodi:role="line"
+         id="tspan1"
+         style="font-style:normal;font-variant:normal;font-weight:bold;font-stretch:condensed;font-size:56.6674px;font-family:'Agency FB';-inkscape-font-specification:'Agency FB, Bold Condensed';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;text-align:end;text-anchor:end;fill:#35eec4;fill-opacity:1;stroke:none;stroke-width:196.649"
+         x="203.67433"
+         y="60.024117">Mightex</tspan><tspan
+         sodipodi:role="line"
+         style="font-style:normal;font-variant:normal;font-weight:bold;font-stretch:condensed;font-size:56.6674px;font-family:'Agency FB';-inkscape-font-specification:'Agency FB, Bold Condensed';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;text-align:end;text-anchor:end;fill:#35eec4;fill-opacity:1;stroke:none;stroke-width:196.649"
+         x="203.67433"
+         y="130.85837"
+         id="tspan2">Manager</tspan></text>
+  </g>
+</svg>

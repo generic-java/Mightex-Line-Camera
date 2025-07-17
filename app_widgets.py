@@ -1,6 +1,6 @@
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QIcon, QAction
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QLabel, QLineEdit, QFileDialog, QSizePolicy, QPushButton, QMessageBox, QRadioButton, QMenu
+from PyQt6.QtGui import QIcon, QAction, QPixmap
+from PyQt6.QtWidgets import QWidget, QHBoxLayout, QLabel, QLineEdit, QFileDialog, QSizePolicy, QPushButton, QMessageBox, QRadioButton, QMenu, QSplashScreen
 
 
 class FileInput(QWidget):
@@ -39,7 +39,7 @@ class FileInput(QWidget):
 
 
 class LabeledLineEdit(QWidget):
-    def __init__(self, label_text="", parent=None, max_text_width=50, text=""):
+    def __init__(self, label_text="", parent=None, max_text_width=50, text="", on_edit=lambda text: None):
         super().__init__(parent)
 
         layout = QHBoxLayout(self)
@@ -47,12 +47,17 @@ class LabeledLineEdit(QWidget):
 
         self.label = QLabel(label_text)
         self._line_edit = QLineEdit()
+        # noinspection PyUnresolvedReferences
+        self._line_edit.textEdited.connect(on_edit)
         self._line_edit.setText(text)
 
         layout.addWidget(self.label)
         layout.addWidget(self._line_edit)
         self._line_edit.setFixedWidth(max_text_width)
         self.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Maximum)
+
+    def set_text(self, text: str):
+        self._line_edit.setText(text)
 
     def get_text(self):
         return self._line_edit.text()
@@ -146,3 +151,44 @@ class FixedSizeSpacer(QWidget):
             self.setFixedWidth(width)
         if height:
             self.setFixedHeight(height)
+
+
+class ToolbarButton(QAction):
+
+    def __init__(self, icon: QIcon, tooltip: str, window, callback=None):
+        super().__init__(icon, tooltip, window)
+        self.setCheckable(False)
+        if callback:
+            self.triggered.connect(callback)
+
+
+class PlayStopButton(ToolbarButton):
+
+    _play_icon = None
+    _stop_icon = None
+
+    def __init__(self, tooltip: str, window, play_callback, stop_callback):
+        self._play_icon = QIcon("./res/icons/play.png")
+        self._stop_icon = QIcon("./res/icons/stop.png")
+        super().__init__(self._play_icon, tooltip, window)
+        self._play_callback = play_callback
+        self._stop_callback = stop_callback
+        self._playing = False
+        self.triggered.connect(self.set_state)
+
+    def set_state(self):
+        self._playing = not self._playing
+        if self._playing:
+            self._play_callback()
+            self.setIcon(self._stop_icon)
+            self.setToolTip("Stop acquisition")
+        else:
+            self._stop_callback()
+            self.setIcon(self._play_icon)
+            self.setToolTip("Acquire continuous spectrum")
+
+
+class SplashScreen(QSplashScreen):
+    fpath: str = "./res/splash/splash screen.png"
+    def __init__(self):
+        super().__init__(QPixmap(self.fpath))
