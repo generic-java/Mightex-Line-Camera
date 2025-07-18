@@ -22,7 +22,7 @@ def main():
     splash.close()
 
     camera = LineCamera()
-    window = Window(camera)
+    window = Window(app, camera)
 
     window.show()
     app.exec()

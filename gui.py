@@ -1,11 +1,12 @@
 import os
+import traceback
 
 import numpy as np
 from PyQt6.QtCore import QSize, Qt
 from PyQt6.QtGui import QAction, QIcon
 from PyQt6.QtWidgets import *
 
-from app_widgets import FileInput, LabeledLineEdit, SimpleButton, ErrorDialog, IconButton, MenuSelectorButton, FixedSizeSpacer, PlayStopButton, ToolbarButton
+from app_widgets import FileInput, LabeledLineEdit, SimpleButton, ErrorDialog, IconButton, MenuSelectorButton, FixedSizeSpacer, PlayStopButton, ToolbarButton, ClearFocusFilter
 from camera_engine.mtsse import LineCamera
 from camera_engine.wrapper import PIXELS
 from loadwaves import load_waves, fetch_waves, read_nist_data, save_waves
@@ -13,7 +14,7 @@ from plottools import DataHandler, RealTimePlot
 
 
 class Window(QMainWindow):
-    def __init__(self, camera: LineCamera):
+    def __init__(self, app: QApplication, camera: LineCamera):
         super().__init__()
 
         #self.setWindowFlag(Qt.WindowType.FramelessWindowHint)
@@ -33,6 +34,8 @@ class Window(QMainWindow):
         self.create_toolbar()
 
         self.resize(1200, 800)
+        self.event_filter = ClearFocusFilter()
+        self.installEventFilter(self.event_filter)
 
     # noinspection PyUnboundLocalVariable
     def keyPressEvent(self, event):
@@ -48,6 +51,8 @@ class Window(QMainWindow):
 
         except Exception as e:
             print(e)
+            trace = traceback.format_exc()
+            print("Caught an exception:\n", trace)
 
     def resizeEvent(self, event):
         self.plot.redraw()
@@ -74,7 +79,7 @@ class Window(QMainWindow):
 
         # Primary loader
         load_first = load_spectra.addAction("Load primary spectrum")
-        primary_spectrum_dialog = LoadSpectrumDialog(self, 1)
+        primary_spectrum_dialog = LoadSpectrumDialog(self, RealTimePlot.PRIMARY)
         load_first.triggered.connect(primary_spectrum_dialog.open)
         load_spectra.addAction(load_first)
 
@@ -90,34 +95,53 @@ class Window(QMainWindow):
         open_from_nist = load_second_menu.addAction("Open from NIST file")
         open_from_nist.triggered.connect(nist_open_dialog.open)
 
-        secondary_spectrum_dialog = LoadSpectrumDialog(self, 2)
+        secondary_spectrum_dialog = LoadSpectrumDialog(self, RealTimePlot.REFERENCE)
         load_file_normal.triggered.connect(secondary_spectrum_dialog.open)
 
         # View menu
         view_menu = self.menubar.addMenu("View")
-        view_menu.setMinimumWidth(225)
 
         toggle_toolbar = QAction("Toggle toolbar", self)
         toggle_toolbar.triggered.connect(self.toggle_toolbar)
         view_menu.addAction(toggle_toolbar)
 
-        # Calibrate primary wavelength submenu
-        calibrate_primary_wavelength = view_menu.addMenu("Calibrate primary x axis")
-        calibrate_primary_wavelength.setMinimumWidth(225)
+        # Toggle primary plot
+        toggle_primary_plot = QAction("Toggle primary plot", self)
+        toggle_primary_plot.triggered.connect(self.plot.toggle_primary_plot)
+        view_menu.addAction(toggle_primary_plot)
 
-        # Calibrate reference wavelength submenu
-        calibrate_reference_wavelength = view_menu.addMenu("Calibrate reference x axis")
-        calibrate_reference_wavelength.setMinimumWidth(225)
-
-        map_pixels_dialog = MaxPixelsDialog(self)
-        calibrate_wavelength_map = calibrate_primary_wavelength.addAction("Map pixels to wavelengths")
-        calibrate_wavelength_map.triggered.connect(map_pixels_dialog.show)
-
-        calibrate_wavelength_coeff = calibrate_primary_wavelength.addAction("Enter coefficients")
-
+        # Toggle reference plot
+        toggle_reference_plot = QAction("Toggle reference plot", self)
+        toggle_reference_plot.triggered.connect(self.plot.toggle_reference_plot)
+        view_menu.addAction(toggle_reference_plot)
 
         # Tools menu
         tools_menu = self.menubar.addMenu("Tools")
+        tools_menu.setMinimumWidth(225)
+
+        # Region calibrated primary spectrum
+        # Calibrate primary wavelength submenu
+        calibrate_primary_wavelength = tools_menu.addMenu("Calibrate primary x axis")
+        calibrate_primary_wavelength.setMinimumWidth(225)
+
+        map_pixels_primary_dialog = MaxPixelsDialog(self, RealTimePlot.PRIMARY)
+        calibrate_wavelength_map = calibrate_primary_wavelength.addAction("Map pixels to wavelengths")
+        calibrate_wavelength_map.triggered.connect(map_pixels_primary_dialog.show)
+
+        calibrate_wavelength_coeff = calibrate_primary_wavelength.addAction("Enter coefficients")
+        # End region
+
+        # Region calibrate reference spectrum
+        # Calibrate reference wavelength submenu
+        calibrate_reference_wavelength = tools_menu.addMenu("Calibrate reference x axis")
+        calibrate_reference_wavelength.setMinimumWidth(225)
+
+        map_pixels_reference_dialog = MaxPixelsDialog(self, RealTimePlot.REFERENCE)
+        calibrate_reference_wavelength_map = calibrate_reference_wavelength.addAction("Map pixels to wavelengths")
+        calibrate_reference_wavelength_map.triggered.connect(map_pixels_reference_dialog.show)
+
+        calibrate_reference_wavelength_coeff = calibrate_reference_wavelength.addAction("Enter coefficients")
+        # End region
 
         # Help menu
         help_menu = self.menubar.addMenu("Help")
@@ -166,11 +190,8 @@ class Window(QMainWindow):
     def save_txt(self):
         pass
 
-    def load_primary_spectrum(self, wavelengths, intensities):
-        self.plot.set_primary_line(wavelengths, intensities)
-
-    def load_secondary_spectrum(self, wavelengths, intensities):
-        self.plot.set_reference_line(wavelengths, intensities)
+    def load_spectrum(self, wavelengths, intensities, graph_selector: int):
+        self.plot.set_raw_data(wavelengths, intensities, graph_selector)
 
     def save_settings(self):
         pass
@@ -265,12 +286,13 @@ class PlotContainer(QWidget):
         master_controls_container.addWidget(reference_controls_box)
         master_controls_container.addStretch()
         plot_container_layout.addLayout(master_controls_container)
+        plot_container_layout.addWidget(self.plot.get_selection_control())
         plot_container_layout.addStretch()
-
 
         self.setLayout(plot_container_layout)
 
-class PixelMapInput(QWidget):
+
+class MapInput(QWidget):
     def __init__(self, removable=True):
         super().__init__()
         layout = QHBoxLayout()
@@ -300,12 +322,13 @@ class PixelMapInput(QWidget):
 
 
 class MaxPixelsDialog(QDialog):
-    def __init__(self, parent: Window):
+    def __init__(self, parent: Window, graph_type: int = RealTimePlot.PRIMARY):
         super().__init__(parent)
+        self.graph_type = graph_type
         self.parent = parent
         self.setWindowTitle("Map pixels to wavelengths")
 
-        vbox = QVBoxLayout()
+        layout = QVBoxLayout()
 
         map_container = QScrollArea()
         map_container.setWidgetResizable(True)
@@ -315,47 +338,51 @@ class MaxPixelsDialog(QDialog):
         container_layout = QVBoxLayout()
         self.container_widget.setLayout(container_layout)
         map_container.setWidget(self.container_widget)
-        vbox.addWidget(map_container)
+        layout.addWidget(map_container)
 
         def add_map_item():
-            container_layout.addWidget(PixelMapInput(removable=True))
+            container_layout.addWidget(MapInput(removable=True))
 
         add_map_button = SimpleButton("Add map item", add_map_item)
         button_container = QHBoxLayout()
         button_container.addStretch()
         button_container.addWidget(add_map_button)
-        vbox.addStretch()
-        vbox.addLayout(button_container)
+        layout.addStretch()
+        layout.addLayout(button_container)
+        layout.addStretch()
 
-        map_button = SimpleButton("Map", self.on_close)
-        bottom_hbox = QHBoxLayout()
-        bottom_hbox.addStretch()
-        bottom_hbox.addWidget(map_button)
-        vbox.addStretch()
-        vbox.addLayout(bottom_hbox)
+        map_button = SimpleButton("Map", self.map)
+        map_button_container = QHBoxLayout()
+        map_button_container.addStretch()
+        map_button_container.addWidget(map_button)
+        layout.addLayout(map_button_container)
 
-        vbox.setContentsMargins(10, 10, 10, 10)
+        close_button = SimpleButton("Close", self.close)
+        close_button_container = QHBoxLayout()
+        close_button_container.addStretch()
+        close_button_container.addWidget(close_button)
+        layout.addLayout(close_button_container)
+
+        layout.setContentsMargins(10, 10, 10, 10)
 
         for i in range(2):
-            container_layout.addWidget(PixelMapInput(removable=False))
+            container_layout.addWidget(MapInput(removable=False))
 
-        self.setLayout(vbox)
+        self.setLayout(layout)
 
     def show(self):
         super().show()
         self.setFixedSize(self.size())
-
-    def on_close(self):
+    def map(self):
         try:
             x_data = []
             y_data = []
-            for widget in self.container_widget.findChildren(PixelMapInput):
+            for widget in self.container_widget.findChildren(MapInput):
                 if not widget.isHidden():
                     x_data.append(widget.get_pixel())
                     y_data.append(widget.get_wavelength())
 
-            self.parent.plot.fit(x_data, y_data)
-            self.close()
+            self.parent.plot.fit(x_data, y_data, self.graph_type)
         except Exception as e:
             print(e)
 
@@ -429,12 +456,12 @@ class SaveFileDialog(QDialog):
             return
 
 class LoadSpectrumDialog(QDialog):
-    def __init__(self, parent: Window, spectrum_num):
+    def __init__(self, parent: Window, graph_selector):
         super().__init__(parent)
         self.parent = parent
-        self.spectrum_num = spectrum_num
+        self.graph_selector = graph_selector
         self.setObjectName("load-spectrum-dialog")
-        if spectrum_num == 1:
+        if graph_selector == RealTimePlot.PRIMARY:
             self.setWindowTitle("Load primary spectrum")
         else:
             self.setWindowTitle("Load reference spectrum")
@@ -476,7 +503,7 @@ class LoadSpectrumDialog(QDialog):
             intensity_col = self.intensity_column_input.get_int()
 
             wavelengths, intensities = load_waves(fname, row_start=row_start, wavelength_col=wavelength_col, intensity_col=intensity_col, delimiter=self.delimiter_input.get_text())
-            _ = self.parent.load_primary_spectrum(wavelengths, intensities) if self.spectrum_num == 1 else self.parent.load_secondary_spectrum(wavelengths, intensities)
+            self.parent.load_spectrum(wavelengths, intensities, self.graph_selector)
             self.close()
         except ValueError:
             return
@@ -535,7 +562,7 @@ class DownloadFromNISTDialog(QDialog):
 
             fetch_waves(end_wavelength, start_wavelength, element, fpath)
             wavelengths, intensities = read_nist_data(fpath, start_wavelength, end_wavelength, intensity_fraction, full_width_half_max)
-            self.parent.load_secondary_spectrum(wavelengths, intensities)
+            self.parent.load_reference_spectrum(wavelengths, intensities)
 
             self.close()
         except ValueError:
@@ -593,7 +620,7 @@ class OpenFromNISTDialog(QDialog):
             fpath = self.file_input.get_chosen_fname()
 
             wavelengths, intensities = read_nist_data(fpath, start_wavelength, end_wavelength, intensity_fraction, full_width_half_max)
-            self.parent.load_secondary_spectrum(wavelengths, intensities)
+            self.parent.load_reference_spectrum(wavelengths, intensities)
 
             self.close()
         except ValueError:

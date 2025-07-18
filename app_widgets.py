@@ -1,6 +1,6 @@
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QObject, QEvent
 from PyQt6.QtGui import QIcon, QAction, QPixmap
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QLabel, QLineEdit, QFileDialog, QSizePolicy, QPushButton, QMessageBox, QRadioButton, QMenu, QSplashScreen
+from PyQt6.QtWidgets import QWidget, QHBoxLayout, QLabel, QLineEdit, QFileDialog, QSizePolicy, QPushButton, QMessageBox, QRadioButton, QMenu, QSplashScreen, QApplication
 
 
 class FileInput(QWidget):
@@ -192,3 +192,14 @@ class SplashScreen(QSplashScreen):
     fpath: str = "./res/splash/splash screen.png"
     def __init__(self):
         super().__init__(QPixmap(self.fpath))
+
+
+class ClearFocusFilter(QObject):
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Type.MouseButtonPress:
+            focused = QApplication.focusWidget()
+            if focused is not None and hasattr(focused, "clearFocus"): # Check if it has the clearFocus function
+                widget_under_mouse = obj.childAt(event.pos())
+                if widget_under_mouse is None or widget_under_mouse != focused:
+                    focused.clearFocus()
+        return super().eventFilter(obj, event)

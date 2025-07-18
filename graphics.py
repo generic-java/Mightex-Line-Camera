@@ -11,12 +11,12 @@ import numpy as np
 
 _MAX_RANGE = 200
 
-def shape_lines(data_x, wavelengths, intensities, intensity_fraction, full_width_half_max):
+def shape_lines(data_x, stick_wavelengths, stick_intensities, intensity_fraction, full_width_half_max):
     """
     Generates a simulated spectrum.
     :param data_x: A numpy array of wavelengths from an experimental dataset
-    :param wavelengths: A numpy array of wavelengths that corresponds to intensities
-    :param intensities: A numpy array of simulated spectral intensities
+    :param stick_wavelengths: A numpy array of wavelengths that corresponds to intensities
+    :param stick_intensities: A numpy array of simulated spectral intensities
     :param intensity_fraction: A weighting factor used to mix gaussian functions with lorentzian functions
     :param full_width_half_max: Value of full-width-half-max for the simulated pseudo-voigts
     :return: A list of simulated relative intensities for each value of data_x
@@ -24,7 +24,7 @@ def shape_lines(data_x, wavelengths, intensities, intensity_fraction, full_width
 
     y = []
     for x in data_x:
-        y.append(intensity_at_point(x, wavelengths, intensities, intensity_fraction, full_width_half_max))
+        y.append(intensity_at_point(x, stick_wavelengths, stick_intensities, intensity_fraction, full_width_half_max))
 
     return np.array(y) / np.max(y)
     

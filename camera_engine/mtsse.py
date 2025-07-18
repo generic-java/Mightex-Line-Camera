@@ -119,7 +119,7 @@ class LineCamera:
     def has_frame(self):
         return self._last_received_frame
 
-    def last_received_frame(self):
+    def last_received_frame(self) -> Frame | None:
         return self._last_received_frame
 
     def add_frame(self, frame: Frame):
