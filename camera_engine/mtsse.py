@@ -28,6 +28,7 @@ class _FrameGrabber(Thread):
                 get_device_spectrometer_frame_data(self.device_id, 1, True)
                 time.sleep(self.interval)
                 i+=1
+            self.active = False
 
     def kill(self):
         self.active = False
@@ -39,10 +40,8 @@ class WorkMode:
 
 class Frame:
     def __init__(self, row, col, attributes, data_tuple):
-        #print(attributes)
-        #for key, val in attributes:
-        #    setattr(self, key, val)
-
+        for key, val in attributes:
+            setattr(self, key, val)
         self.row = row
         self.col = col
         self.raw_data = np.array(data_tuple[0])
@@ -73,6 +72,7 @@ class LineCamera:
     _frame_grabber: _FrameGrabber = None
     _last_received_frame: Frame = None
     _frame_callback = None
+    _exposure_microseconds = 50000
 
     def __init__(self, activate=True, device_id=1):
         self.device_id = device_id
@@ -106,10 +106,18 @@ class LineCamera:
         return self._frame_grabber and self._frame_grabber.active
 
     def set_exposure_microseconds(self, exposure_time_microseconds):
+        self._exposure_microseconds = self._exposure_microseconds
         set_device_exposure_time(self.device_id, exposure_time_microseconds)
 
+    def get_exposure_microseconds(self):
+        return self._exposure_microseconds
+
     def set_exposure_ms(self, exposure_time_ms):
+        self._exposure_microseconds = exposure_time_ms * 1000
         self.set_exposure_microseconds(exposure_time_ms * 1000)
+
+    def get_exposure_ms(self):
+        return self._exposure_microseconds / 1000
 
     def set_work_mode(self, work_mode: int):
         if work_mode != 0 and work_mode != 1:

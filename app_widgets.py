@@ -1,6 +1,6 @@
-from PyQt6.QtCore import Qt, QObject, QEvent
+from PyQt6.QtCore import Qt, QObject, QEvent, QSize, QPoint
 from PyQt6.QtGui import QIcon, QAction, QPixmap
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QLabel, QLineEdit, QFileDialog, QSizePolicy, QPushButton, QMessageBox, QRadioButton, QMenu, QSplashScreen, QApplication
+from PyQt6.QtWidgets import QWidget, QHBoxLayout, QLabel, QLineEdit, QFileDialog, QSizePolicy, QPushButton, QMessageBox, QRadioButton, QMenu, QSplashScreen, QApplication, QToolButton, QMainWindow
 
 
 class FileInput(QWidget):
@@ -117,6 +117,29 @@ class ArrowImmuneRadioButton(QRadioButton):
         else:
             super().keyPressEvent(event)
 
+class MenuButton(QToolButton):
+    _open_menu: QMenu = None
+    def __init__(self, name: str):
+        super().__init__()
+        self.setText(name)
+        self._menu = QMenu()
+        self.setMenu(self._menu)
+        self.setFixedWidth(60)
+        self.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+
+    def add_action(self, action: QAction):
+        self._menu.addAction(action)
+
+    def add_menu(self, name: str):
+        return self._menu.addMenu(name)
+
+    def get_menu(self):
+        return self._menu
+
+    def enterEvent(self, event):
+        if MenuButton._open_menu and MenuButton._open_menu is not self.menu():
+            MenuButton._open_menu.close()
+
 class MenuSelectorButton(QPushButton):
     _selected: str = None
     def __init__(self, name: str, *actions):
@@ -203,3 +226,78 @@ class ClearFocusFilter(QObject):
                 if widget_under_mouse is None or widget_under_mouse != focused:
                     focused.clearFocus()
         return super().eventFilter(obj, event)
+
+
+class WindowHandleButton(QPushButton):
+    def __init__(self, primary_icon: QIcon, hover_icon: QIcon, size: QSize):
+        super().__init__()
+        self.primary_icon = primary_icon
+        self.hover_icon = hover_icon
+        self.setFixedSize(size)
+        self.setIconSize(size)
+        self.setIcon(primary_icon)
+
+    def enterEvent(self, a0):
+        self.setIcon(self.hover_icon)
+
+    def leaveEvent(self, a0):
+        self.setIcon(self.primary_icon)
+
+class FullscreenToggleButton(QPushButton):
+    in_fullscreen = False
+
+    def __init__(self, parent: QMainWindow, fullscreen: QIcon, fullscreen_hover: QIcon, restore_down: QIcon, restore_down_hover: QIcon, size: QSize):
+        super().__init__()
+        self.parent = parent
+        self.fullscreen = fullscreen
+        self.fullscreen_hover = fullscreen_hover
+        self.restore_down = restore_down
+        self.restore_down_hover = restore_down_hover
+        self.primary_icon = fullscreen
+        self.hover_icon = fullscreen_hover
+        self.setFixedSize(size)
+        self.setIconSize(size)
+        self.setIcon(self.primary_icon)
+
+    def enterEvent(self, event):
+        self.setIcon(self.hover_icon)
+
+    def leaveEvent(self, event):
+        self.setIcon(self.primary_icon)
+
+    def mousePressEvent(self, event):
+        self.in_fullscreen = not self.in_fullscreen
+        if self.in_fullscreen:
+            self.parent.showFullScreen()
+            self.primary_icon = self.restore_down
+            self.hover_icon = self.restore_down_hover
+        else:
+            self.parent.setWindowState(Qt.WindowState.WindowNoState)
+            self.primary_icon = self.fullscreen
+            self.hover_icon = self.fullscreen_hover
+
+
+class MoveWindowSpacer(QWidget):
+    dragging_window = False
+    drag_offset: QPoint = QPoint()
+
+    def __init__(self, window: QMainWindow):
+        super().__init__()
+        self.parent = window
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)  # Ensure it receives events
+        self.setStyleSheet("background: transparent;")
+
+    def mousePressEvent(self, event):
+        self.dragging_window = True
+        self.drag_offset = self.parent.frameGeometry().topLeft() - event.globalPosition().toPoint() # Window position minus mouse position
+        event.accept() # Accept the event so it isn't processed by anything else
+
+    def mouseReleaseEvent(self, event):
+        self.dragging_window = False
+        event.accept()
+
+    def mouseMoveEvent(self, event):
+        if self.dragging_window:
+            self.parent.move(event.globalPosition().toPoint() + self.drag_offset)
+            event.accept()

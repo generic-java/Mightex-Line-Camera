@@ -17,12 +17,11 @@ def main():
     QFontDatabase.addApplicationFont("./res/fonts/roboto/static/Roboto-SemiBold.ttf")
 
     start_engine()
-    #time.sleep(5)
     print("Camera engine initialized.")
     splash.close()
 
     camera = LineCamera()
-    window = Window(app, camera)
+    window = Window(camera)
 
     window.show()
     app.exec()

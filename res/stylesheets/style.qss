@@ -1,19 +1,33 @@
-QMenuBar {
+#menubar {
+background-color: #343434;
+border: none;
+padding: 0px;
+margin: 0px;
+}
+
+MenuButton {
 background-color: #343434;
 color: #6aee35;
+
+padding: 5px 10px 5px 10px;
 border: none;
 font-family: "Roboto";
 font-size: 14px;
 }
 
-QMenuBar::item:selected {
+MenuButton::menu-indicator {
+image: none;
+}
+
+MenuButton:hover {
 background-color: #6aee35;
 color: #343434;
 }
 
-QMenuBar::item {
-padding: 5px 10px 5px 10px;
-margin-right: 5px;
+QPushButton::menu-indicator {
+image: none;
+width: 0px;
+height: 0px;
 }
 
 QMenu {
@@ -41,6 +55,12 @@ QToolBar {
 border: none;
 background-color: #343434;
 color: #6aee35;
+}
+
+QToolBar::separator {
+background-color: #6aee35;
+width: 2px;
+margin-right: 2px;
 }
 
 QToolButton {
@@ -174,4 +194,16 @@ border-radius: 5px;
 border: 2px solid #6aee35;
 background-color: transparent;
 border-radius: 5px;
+}
+
+WindowHandleButton {
+padding: 0px;
+margin: 0px;
+border: none;
+}
+
+#button-container-widget {
+padding: 0px;
+margin: 0px;
+border: none;
 }

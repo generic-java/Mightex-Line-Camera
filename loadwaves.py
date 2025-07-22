@@ -112,12 +112,12 @@ def load_waves(fpath: str, row_start=0, wavelength_col=0, intensity_col=0, delim
 
     return np.array(wavelengths), np.array(intensities)
 
-def save_waves(fpath, first_column, second_column, delimiter=","):
+def save_waves(fpath, first_column, second_column, third_column, delimiter=","):
     with open(fpath, "w") as file:
-        data = np.transpose(np.column_stack((first_column, second_column)))
+        data = np.column_stack((first_column, second_column, third_column))
         text = ""
         for row in data:
-            text += str(row[0]) + delimiter + str(row[1]) + "\n"
+            text += str(row[0]) + delimiter + str(row[1]) + delimiter + str(row[2]) + "\n"
         file.write(text)
 
 def main():

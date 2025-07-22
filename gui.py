@@ -6,7 +6,9 @@ from PyQt6.QtCore import QSize, Qt
 from PyQt6.QtGui import QAction, QIcon
 from PyQt6.QtWidgets import *
 
-from app_widgets import FileInput, LabeledLineEdit, SimpleButton, ErrorDialog, IconButton, MenuSelectorButton, FixedSizeSpacer, PlayStopButton, ToolbarButton, ClearFocusFilter
+from app_widgets import FileInput, LabeledLineEdit, SimpleButton, ErrorDialog, IconButton, FixedSizeSpacer, \
+    PlayStopButton, ToolbarButton, ClearFocusFilter, WindowHandleButton, MenuButton, MoveWindowSpacer, \
+    FullscreenToggleButton
 from camera_engine.mtsse import LineCamera
 from camera_engine.wrapper import PIXELS
 from loadwaves import load_waves, fetch_waves, read_nist_data, save_waves
@@ -14,17 +16,17 @@ from plottools import DataHandler, RealTimePlot
 
 
 class Window(QMainWindow):
-    def __init__(self, app: QApplication, camera: LineCamera):
+    def __init__(self, camera: LineCamera):
         super().__init__()
 
-        #self.setWindowFlag(Qt.WindowType.FramelessWindowHint)
+        self.setWindowFlag(Qt.WindowType.FramelessWindowHint)
         self.camera = camera
         self.setWindowTitle("Mightex Manager")
 
         # All things plotting
         self.plot = RealTimePlot(DataHandler(camera))
 
-        self.setCentralWidget(PlotContainer(self.plot))
+        self.setCentralWidget(PlotContainer(self.plot, self.camera))
 
         # Menu
         self.menubar = self.menuBar()
@@ -57,15 +59,23 @@ class Window(QMainWindow):
     def resizeEvent(self, event):
         self.plot.redraw()
 
-    # noinspection PyUnresolvedReferences
     def create_menu(self):
+        self.menubar.hide()
+        menu_widget = QWidget()
+        menu_widget.setObjectName("menubar")
+        menu_container = QHBoxLayout()
+        menu_container.setContentsMargins(0, 0, 0, 0)
+
+        menu_button_container_outer = QVBoxLayout()
+        menu_button_container_inner = QHBoxLayout()
+
         # File menu
-        file_menu = self.menubar.addMenu("File")
+        file_menu = MenuButton("File")
         new_action = QAction("New", self)
         file_menu.addAction(new_action)
 
         # Save as submenu
-        save_as = file_menu.addMenu("Save as")
+        save_as = file_menu.add_menu("Save as")
         save_as_csv = QAction("CSV", self)
         save_as_txt = QAction("TXT", self)
         save_as_other = QAction("other", self)
@@ -74,7 +84,7 @@ class Window(QMainWindow):
         save_as.addAction(save_as_other)
 
         # Load spectra submenu
-        load_spectra = file_menu.addMenu("Load spectra")
+        load_spectra = file_menu.add_menu("Load spectra")
         load_spectra.setFixedWidth(200)
 
         # Primary loader
@@ -99,29 +109,29 @@ class Window(QMainWindow):
         load_file_normal.triggered.connect(secondary_spectrum_dialog.open)
 
         # View menu
-        view_menu = self.menubar.addMenu("View")
+        view_menu = MenuButton("View")
 
         toggle_toolbar = QAction("Toggle toolbar", self)
         toggle_toolbar.triggered.connect(self.toggle_toolbar)
-        view_menu.addAction(toggle_toolbar)
+        view_menu.add_action(toggle_toolbar)
 
         # Toggle primary plot
         toggle_primary_plot = QAction("Toggle primary plot", self)
         toggle_primary_plot.triggered.connect(self.plot.toggle_primary_plot)
-        view_menu.addAction(toggle_primary_plot)
+        view_menu.add_action(toggle_primary_plot)
 
         # Toggle reference plot
         toggle_reference_plot = QAction("Toggle reference plot", self)
         toggle_reference_plot.triggered.connect(self.plot.toggle_reference_plot)
-        view_menu.addAction(toggle_reference_plot)
+        view_menu.add_action(toggle_reference_plot)
 
         # Tools menu
-        tools_menu = self.menubar.addMenu("Tools")
-        tools_menu.setMinimumWidth(225)
+        tools_menu = MenuButton("Tools")
+        tools_menu.get_menu().setMinimumWidth(225)
 
         # Region calibrated primary spectrum
         # Calibrate primary wavelength submenu
-        calibrate_primary_wavelength = tools_menu.addMenu("Calibrate primary x axis")
+        calibrate_primary_wavelength = tools_menu.add_menu("Calibrate primary x axis")
         calibrate_primary_wavelength.setMinimumWidth(225)
 
         map_pixels_primary_dialog = MaxPixelsDialog(self, RealTimePlot.PRIMARY)
@@ -133,7 +143,7 @@ class Window(QMainWindow):
 
         # Region calibrate reference spectrum
         # Calibrate reference wavelength submenu
-        calibrate_reference_wavelength = tools_menu.addMenu("Calibrate reference x axis")
+        calibrate_reference_wavelength = tools_menu.add_menu("Calibrate reference x axis")
         calibrate_reference_wavelength.setMinimumWidth(225)
 
         map_pixels_reference_dialog = MaxPixelsDialog(self, RealTimePlot.REFERENCE)
@@ -144,11 +154,49 @@ class Window(QMainWindow):
         # End region
 
         # Help menu
-        help_menu = self.menubar.addMenu("Help")
+        help_menu = MenuButton("Help")
+
+        # Window button container
+        button_container = QHBoxLayout()
+
+        # Minimize button
+        minimize_button = WindowHandleButton(QIcon("./res/icons/minimize.png"), QIcon("./res/icons/minimize_hover.png"), QSize(46, 40))
+        minimize_button.clicked.connect(self.showMinimized)
+        button_container.addWidget(minimize_button)
+
+        # Fullscreen button
+
+        fullscreen_toggle = FullscreenToggleButton(
+            self,
+            QIcon("./res/icons/fullscreen.png"),
+            QIcon("./res/icons/fullscreen_hover.png"),
+            QIcon("./res/icons/restore_down.png"),
+            QIcon("./res/icons/restore_down_hover.png"),
+            QSize(46, 40)
+        )
+        button_container.addWidget(fullscreen_toggle)
 
         # Close button
-        close_button = QAction("Close")
-        self.menubar.addAction(close_button)
+        close_button = WindowHandleButton(QIcon("./res/icons/close.png"), QIcon("./res/icons/close_hover.png"), QSize(46, 40))
+        close_button.clicked.connect(self.close)
+        button_container.addWidget(close_button)
+
+        # Add menu items
+        menu_button_container_inner.addWidget(file_menu)
+        menu_button_container_inner.addWidget(view_menu)
+        menu_button_container_inner.addWidget(tools_menu)
+        menu_button_container_inner.addWidget(help_menu)
+
+        menu_button_container_outer.addLayout(menu_button_container_inner)
+        menu_button_container_outer.addStretch()
+
+        menu_container.addLayout(menu_button_container_outer)
+        menu_container.addWidget(MoveWindowSpacer(self))
+        menu_container.addLayout(button_container)
+        menu_widget.setLayout(menu_container)
+
+        self.setMenuWidget(menu_widget)
+
 
     def toggle_toolbar(self):
         _ = self.toolbar.show() if self.toolbar.isHidden() else self.toolbar.hide()
@@ -158,16 +206,30 @@ class Window(QMainWindow):
         self.toolbar.setIconSize(QSize(20, 20))
         self.addToolBar(self.toolbar)
 
-        save_dialog = SaveFileDialog(self)
+        self.toolbar.addWidget(FixedSizeSpacer(width=10))
 
+        save_dialog = SaveFileDialog(self)
         self.toolbar.addAction(ToolbarButton(QIcon("./res/icons/save.png"), "Save spectrum", self, callback=save_dialog.open))
 
-        self.toolbar.addAction(ToolbarButton(QIcon("./res/icons/notepad.png"), "Save as CSV", self, callback=self.save_file))
-        self.toolbar.addAction(ToolbarButton(QIcon("./res/icons/txtpad.png"), "Save as TXT", self, callback=self.save_file))
+        csv_save_dialog = SaveFileDialog(self, ask_for_delimiter=False, dialog_filter="CSV Files (*.csv)")
+        self.toolbar.addAction(ToolbarButton(QIcon("./res/icons/notepad.png"), "Save as CSV", self, callback=csv_save_dialog.open))
 
-        self.toolbar.addAction(PlayStopButton("Acquire continuous spectrum", self, self.camera.grab_spectrum_frames, self.camera.stop_spectrum_grab))
+        txt_save_dialog = SaveFileDialog(self, dialog_filter="Text Documents (*.txt)")
+        self.toolbar.addAction(ToolbarButton(QIcon("./res/icons/txtpad.png"), "Save as TXT", self, callback=txt_save_dialog.open))
 
-        #self.toolbar.addAction()
+        self.toolbar.addSeparator()
+
+        def grab_frames_continuous():
+            self.camera.stop_spectrum_grab()
+            self.camera.grab_spectrum_frames()
+
+        self.toolbar.addAction(PlayStopButton("Acquire continuous spectrum", self, grab_frames_continuous, self.camera.stop_spectrum_grab))
+
+        def grab_one_frame():
+            self.camera.stop_spectrum_grab()
+            self.camera.grab_spectrum_frames(1)
+
+        self.toolbar.addAction(ToolbarButton(QIcon("./res/icons/camera.png"),"Acquire frame", self, callback=grab_one_frame))
 
     def save_file(self, dialog_filter=""):
         fname, _ = QFileDialog.getSaveFileName(filter=dialog_filter)
@@ -202,9 +264,10 @@ def load_stylesheet(fname: str):
         return file.read()
 
 class PlotContainer(QWidget):
-    def __init__(self, plot: RealTimePlot):
+    def __init__(self, plot: RealTimePlot, camera: LineCamera):
         super().__init__()
         self.plot = plot
+        self.camera = camera
         plot_container_layout = QVBoxLayout()
 
         plot_container_layout.addWidget(self.plot)
@@ -281,13 +344,23 @@ class PlotContainer(QWidget):
         reference_controls_box.setFixedSize(QSize(300, 200))
         # End region
 
+        def set_exposure(text: str):
+            try:
+                exposure = int(float(text))
+            except ValueError:
+                return
+
+            self.camera.set_exposure_ms(exposure)
+
+        exposure_time_edit = LabeledLineEdit("Exposure time (ms):", on_edit=set_exposure, max_text_width=75, text=f"{camera.get_exposure_ms():.0f}")
+
 
         master_controls_container.addWidget(primary_controls_box)
         master_controls_container.addWidget(reference_controls_box)
+        master_controls_container.addWidget(exposure_time_edit)
         master_controls_container.addStretch()
         plot_container_layout.addLayout(master_controls_container)
         plot_container_layout.addWidget(self.plot.get_selection_control())
-        plot_container_layout.addStretch()
 
         self.setLayout(plot_container_layout)
 
@@ -393,50 +466,32 @@ class SaveFileDialog(QDialog):
         self.parent = parent
         self.setWindowTitle(title)
 
-        vbox = QVBoxLayout()
+        container = QVBoxLayout()
 
         if ask_for_delimiter:
             self.delimiter_input = LabeledLineEdit("Delimiter:", max_text_width=25, text=",")
-            vbox.addWidget(self.delimiter_input)
+            container.addWidget(self.delimiter_input)
+        else:
+            self.delimiter_input = None
 
-        wl_column_container = QHBoxLayout()
-        wl_column_label = QLabel("Wavelength column:")
-        wl_column_readout = QLabel("N/A")
 
-        wl_column_readout.setObjectName("wl-column-readout")
+        label = QLabel("Column 0: Pixel value\nColumn 1: Calibrated wavelength value\nColumn 2: Intensity")
+        container.addWidget(label)
 
-        wl_column_container.addWidget(wl_column_label)
-        wl_column_container.addWidget(wl_column_readout)
-        wl_column_container.addStretch()
+        self.file_input = FileInput(dialog_filter=dialog_filter, is_save_file=True)
 
-        intensity_column_container = QHBoxLayout()
-        intensity_label = QLabel("Intensity column:")
-        intensity_column_container.addWidget(intensity_label)
-        first_column_action = QAction("Column 0", self)
-        first_column_action.triggered.connect(lambda: wl_column_readout.setText("Column 1"))
-        second_column_action = QAction("Column 1", self)
-        second_column_action.triggered.connect(lambda: wl_column_readout.setText("Column 0"))
-        self.intensity_column_button = MenuSelectorButton("Choose intensity column", first_column_action, second_column_action)
-        intensity_column_container.addWidget(self.intensity_column_button)
-        intensity_column_container.addStretch()
-        vbox.addLayout(intensity_column_container)
-        vbox.addLayout(wl_column_container)
-        first_column_action.trigger()
-
-        self.file_input = FileInput(dialog_filter=dialog_filter)
-
-        vbox.addWidget(self.file_input)
+        container.addWidget(self.file_input)
 
         save_button = SimpleButton("Save", self.on_close)
 
         bottom_hbox = QHBoxLayout()
         bottom_hbox.addStretch()
         bottom_hbox.addWidget(save_button)
-        vbox.addStretch()
-        vbox.addLayout(bottom_hbox)
+        container.addStretch()
+        container.addLayout(bottom_hbox)
 
-        vbox.setContentsMargins(10, 10, 10, 10)
-        self.setLayout(vbox)
+        container.setContentsMargins(10, 10, 10, 10)
+        self.setLayout(container)
 
     def open(self):
         super().open()
@@ -444,17 +499,18 @@ class SaveFileDialog(QDialog):
 
     def on_close(self):
         try:
-            wavelengths, intensities = self.parent.plot.get_primary_data()
-            if self.intensity_column_button.get_selected() == "Column 1":
-                save_waves(self.file_input.get_chosen_fname(), wavelengths, intensities, delimiter=self.delimiter_input.get_text())
+            pixels, wavelengths, intensities = self.parent.plot.get_primary_data()
+            if self.delimiter_input:
+                delimiter = self.delimiter_input.get_text()
+                if not delimiter:
+                    delimiter = ","
             else:
-                save_waves(self.file_input.get_chosen_fname(), wavelengths, intensities, delimiter=self.delimiter_input.get_text())
+                delimiter = ","
 
+            save_waves(self.file_input.get_chosen_fname(), pixels, wavelengths, intensities, delimiter=delimiter)
+
+        finally:
             self.close()
-        except Exception as e:
-            print(e)
-            return
-
 class LoadSpectrumDialog(QDialog):
     def __init__(self, parent: Window, graph_selector):
         super().__init__(parent)

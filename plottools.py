@@ -1,8 +1,9 @@
 import re
 
+import matplotlib
 import numpy as np
-from PyQt6.QtCore import QObject, pyqtSignal
-from PyQt6.QtWidgets import QLabel, QWidget, QVBoxLayout, QHBoxLayout, QApplication
+from PyQt6.QtCore import QObject, pyqtSignal, QTimer
+from PyQt6.QtWidgets import QLabel, QWidget, QVBoxLayout, QHBoxLayout, QApplication, QSizePolicy
 from matplotlib.axes import Axes
 from matplotlib.backend_bases import FigureCanvasBase
 from matplotlib.backends.backend_agg import FigureCanvasAgg
@@ -19,6 +20,7 @@ class BlitManager:
     """
     :source: https://matplotlib.org/stable/users/explain/animations/blitting.html
     """
+
     def __init__(self, canvas, animated_artists=()):
         """
         Parameters
@@ -31,6 +33,7 @@ class BlitManager:
         animated_artists : Iterable[Artist]
             List of the artists to manage
         """
+
         self.canvas = canvas
         self._background = None
         self._artists = []
@@ -81,9 +84,11 @@ class BlitManager:
         """Draw all the animated artists."""
         for i in range(len(self._artists)):
             if self.visible_artists[i]:
+                self.timer.reset()
                 self.canvas.figure.draw_artist(self._artists[i])
 
-    def update(self):
+    def update(self): # not the bottleneck
+        #self.timer.reset()
         """Update the screen with animated artists."""
         # Paranoia in case we missed the draw event
         if self._background is None:
@@ -91,12 +96,17 @@ class BlitManager:
         else:
             # Restore the background
             self.canvas.restore_region(self._background)
+
             # Draw all the animated artists
             self._draw_animated()
+
             # Update the GUI state
             self.canvas.blit(self.canvas.figure.bbox)
+
         # Let the GUI event loop process anything it has to do
         self.canvas.flush_events()
+
+
 
 def clamp(min_value, max_value, num):
     return min(max(min_value, num), max_value)
@@ -104,23 +114,37 @@ def clamp(min_value, max_value, num):
 
 class DataHandler(QObject):
     _signal = pyqtSignal(Frame)
+    FPS = 30
+    awaiting_plot = False
 
     def __init__(self, camera: LineCamera):
         super().__init__()
-        camera.add_frame_callback(self._received_data)
+        self.camera = camera
 
-    # noinspection PyUnresolvedReferences
-    def _received_data(self, input_frame: Frame):
-        self._signal.emit(input_frame)
+        def frame_callback():
+            self.awaiting_plot = True
+
+        self.camera.add_frame_callback(frame_callback)
+        self.timer = QTimer()
+        self.timer.setInterval(int(1000 / self.FPS))
+        self.timer.timeout.connect(self._plot_data)
+        self.timer.start()
+
+    def _plot_data(self):
+        if self.awaiting_plot:
+            frame = self.camera.last_received_frame()
+            if frame:
+                self._signal.emit(frame)
+            self.awaiting_plot = False
 
     def get_signal(self):
         return self._signal
 
 
 class CrosshairReadout(QLabel):
-
     round_x = False
     round_y = False
+
     def __init__(self):
         super().__init__()
 
@@ -136,7 +160,8 @@ class Crosshair:
     x_multiplier = 1
     y_multiplier = 1
 
-    def __init__(self, blit_manager: BlitManager, crosshair_readout: CrosshairReadout, canvas: FigureCanvasBase, axes: Axes, line: Line2D, size=50, color="white"):
+    def __init__(self, blit_manager: BlitManager, crosshair_readout: CrosshairReadout, canvas: FigureCanvasBase,
+                 axes: Axes, line: Line2D, size=50, color="white"):
         super().__init__()
         self.blit_manager = blit_manager
         self.crosshair_readout = crosshair_readout
@@ -152,6 +177,12 @@ class Crosshair:
         self.horizontal.set_animated(True)
         self.horizontal.set_color(color)
         self.line = line
+        self.horizontal.set_antialiased(False)
+        self.horizontal.set_solid_joinstyle("miter")
+        self.horizontal.set_solid_capstyle("butt")
+        self.vertical.set_antialiased(False)
+        self.vertical.set_solid_joinstyle("miter")
+        self.vertical.set_solid_capstyle("butt")
 
         canvas.mpl_connect("draw_event", self.on_resize)
 
@@ -172,9 +203,9 @@ class Crosshair:
         display_y = clamp(y_min, y_max, line_y[index])
         extent_x = self.size / 2 * self.x_multiplier
         extent_y = self.size / 2 * self.y_multiplier
-        vertical_y = np.arange(display_y - extent_y, display_y + extent_y, 0.01)
+        vertical_y = np.array([display_y - extent_y, display_y + extent_y])
         self.vertical.set_data(display_x * np.ones_like(vertical_y), vertical_y)
-        horizontal_x = np.arange(display_x - extent_x, display_x + extent_x, 0.01)
+        horizontal_x = np.array([display_x - extent_x, display_x + extent_x])
         self.horizontal.set_data(horizontal_x, display_y * np.ones_like(horizontal_x))
 
         self.crosshair_readout.set_text(display_x, display_y)
@@ -182,6 +213,9 @@ class Crosshair:
 
     def refresh(self):
         self.on_resize()
+        self.set_position_index(self.index)
+
+    def reset(self):
         self.set_position_index(self.index)
 
     def get_position_indices(self):
@@ -200,12 +234,13 @@ class Crosshair:
     def get_artists(self):
         return self.vertical, self.horizontal
 
-class Graph:
 
+class Graph:
     PIXEL = 0
     WAVELENGTH = 1
 
-    def __init__(self, unit_type: int, blit_manager: BlitManager, axes: Axes, raw_data, line: Line2D, crosshair: Crosshair, fitting_params):
+    def __init__(self, unit_type: int, blit_manager: BlitManager, axes: Axes, raw_data, line: Line2D,
+                 crosshair: Crosshair, fitting_params):
         self._unit_type = unit_type
         self._blit_manager = blit_manager
         self._axes = axes
@@ -235,11 +270,14 @@ class Graph:
         else:
             self._calibrated_data = self._raw_data
             self._line.set_data(x, y)
-        self._crosshair.refresh()
+        self._crosshair.reset()
         self._blit_manager.update()
 
     def get_calibrated_data(self):
         return self._calibrated_data
+
+    def get_data(self):
+        return self._raw_data[0], self._calibrated_data[0], self._raw_data[1]
 
     def get_line(self) -> Line2D:
         return self._line
@@ -258,9 +296,11 @@ class Graph:
 
     def get_y_bounds(self):
         return self._axes.get_ylim()
+
     def update_x_bounds(self):
         if self._unit_type == Graph.WAVELENGTH:
-            self._axes.set_xlim(cubic(0, *self._fitting_params), cubic(np.max(self._raw_data[0]), *self._fitting_params))
+            self._axes.set_xlim(cubic(0, *self._fitting_params),
+                                cubic(np.max(self._raw_data[0]), *self._fitting_params))
             self._line.set_xdata(cubic(self._raw_data[0], *self._fitting_params))
         elif self._unit_type == Graph.PIXEL:
             self._axes.set_xlim(0, PIXELS)
@@ -269,8 +309,10 @@ class Graph:
     def get_artists(self):
         return self._line, *self._crosshair.get_artists()
 
+
 class ReferenceGraph(Graph):
-    def __init__(self, unit_type: int, blit_manager: BlitManager, axes: Axes, raw_data, line: Line2D, crosshair: Crosshair, fitting_params):
+    def __init__(self, unit_type: int, blit_manager: BlitManager, axes: Axes, raw_data, line: Line2D,
+                 crosshair: Crosshair, fitting_params):
         super().__init__(unit_type, blit_manager, axes, raw_data, line, crosshair, fitting_params)
 
     def set_raw_data(self, x, y):
@@ -284,8 +326,8 @@ class ReferenceGraph(Graph):
         self._blit_manager.force_refresh()
         self._blit_manager.update()
 
-class RealTimePlot(QWidget):
 
+class RealTimePlot(QWidget):
     style = {
         "background": "#343434",
         "color": "#6aee35"
@@ -305,6 +347,8 @@ class RealTimePlot(QWidget):
         self.figure = Figure()
         self.canvas = FigureCanvas(self.figure)
         self._blit_manager = BlitManager(self.canvas)
+        self.canvas.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         container = QVBoxLayout()
         container.addWidget(self.canvas)
@@ -319,7 +363,13 @@ class RealTimePlot(QWidget):
         primary_axes.set_xlim(0, PIXELS)
         primary_axes.set_ylim(0, 65535)
         primary_axes.grid(True, color=color)
-        primary_line, = primary_axes.plot([], [], linewidth=1)
+        primary_line = Line2D([], [], linewidth=1)
+        primary_axes.add_line(primary_line)
+        primary_line.set_antialiased(False)
+        primary_line.set_solid_joinstyle("miter")
+        primary_line.set_solid_capstyle("butt")
+        matplotlib.rcParams["path.simplify"] = True
+        matplotlib.rcParams["path.simplify_threshold"] = 1.0
 
         # Primary crosshair readout
         self.primary_crosshair_readout = CrosshairReadout()
@@ -340,12 +390,16 @@ class RealTimePlot(QWidget):
         reference_axes = self.figure.add_subplot()
         reference_axes.set_ylim(0, 1.2)
         reference_line, = reference_axes.plot([], [], linewidth=1)
+        reference_line.set_antialiased(False)
+        reference_line.set_solid_joinstyle("miter")
+        reference_line.set_solid_capstyle("butt")
 
         # Reference crosshair readout
         self.reference_crosshair_readout = CrosshairReadout()
 
         # Reference crosshair
-        self.reference_crosshair = Crosshair(self._blit_manager, self.reference_crosshair_readout, self.canvas, reference_axes, reference_line)
+        self.reference_crosshair = Crosshair(self._blit_manager, self.reference_crosshair_readout, self.canvas,
+                                             reference_axes, reference_line)
 
         self.reference_graph = ReferenceGraph(
             Graph.WAVELENGTH,
@@ -416,15 +470,20 @@ class RealTimePlot(QWidget):
         primary_line.set_color("#e44cc3")
         reference_line.set_color("orange")
 
-
     def select_plot(self, selected_plot: int):
         self.selected_graph = selected_plot
 
     def set_raw_data(self, x, y, graph_selector: int):
         self.select_graph(graph_selector).set_raw_data(x, y)
 
-    def get_primary_data(self):
+    def get_primary_raw_data(self):
         return self.primary_graph.get_raw_data()
+
+    def get_primary_calibrated_data(self):
+        return self.primary_graph.get_calibrated_data()
+
+    def get_primary_data(self):
+        return self.primary_graph.get_data()
 
     def get_reference_data(self):
         return self.reference_graph.get_raw_data()
@@ -445,8 +504,8 @@ class RealTimePlot(QWidget):
 
         graph = self.select_graph(self.selected_graph)
 
-        transform = graph.get_axes().transData.inverted() # This makes a transform that converts display coordinates to data coordinates
-        data_x, data_y = transform.transform((event.x, event.y)) # Transforms display coordinates to data coordinates
+        transform = graph.get_axes().transData.inverted()  # This makes a transform that converts display coordinates to data coordinates
+        data_x, data_y = transform.transform((event.x, event.y))  # Transforms display coordinates to data coordinates
 
         line_x, line_y = graph.get_line().get_data()
         if len(line_x) == 0:
@@ -503,7 +562,6 @@ class RealTimePlot(QWidget):
         axes = self.reference_graph.get_axes()
         self.define_axes_bounds(self.reference_x_min, self.reference_x_max, axes.set_xlim, self._refresh_reference)
 
-
     def relim_reference_y(self):
         axes = self.reference_graph.get_axes()
         self.define_axes_bounds(self.reference_y_min, self.reference_y_max, axes.set_ylim, self._refresh_reference)
@@ -513,10 +571,10 @@ class RealTimePlot(QWidget):
         graph = self.select_graph(graph_selector)
         graph.set_unit_type(Graph.WAVELENGTH)
         if len(pixels) == 2:
-            (a0, a1),_ = curve_fit(linear, pixels, wavelengths)
+            (a0, a1), _ = curve_fit(linear, pixels, wavelengths)
             graph.set_fitting_params((a0, a1, 0, 0))
         elif len(pixels) == 3:
-            (a0, a1, a2),_ = curve_fit(quadratic, pixels, wavelengths)
+            (a0, a1, a2), _ = curve_fit(quadratic, pixels, wavelengths)
             graph.set_fitting_params((a0, a1, a2, 0))
         else:
             fitting_params, _ = curve_fit(cubic, pixels, wavelengths)
@@ -531,10 +589,10 @@ class RealTimePlot(QWidget):
         else:
             self.reference_unit_control.check_wavelength()
 
-        self._blit_manager.force_refresh() # Redraw the entire plot, including the background
+        self._blit_manager.force_refresh()  # Redraw the entire plot, including the background
         self._blit_manager.update()
 
-        print(graph.get_fitting_params()) # TODO: replace with visual display
+        print(graph.get_fitting_params())  # TODO: replace with visual display
 
     def set_unit(self, graph_selector: int, to_set: Graph, unit_type: int):
         if not 0 <= unit_type <= 1 or type(unit_type) != int:
@@ -608,11 +666,14 @@ class RealTimePlot(QWidget):
             [self._blit_manager.show_artist(index) for index in self.reference_indices]
         self._blit_manager.update()
 
+
 def linear(x, a0, a1):
     return a0 + a1 * x
 
+
 def quadratic(x, a0, a1, a2):
     return a0 + a1 * x + a2 * x ** 2
+
 
 def cubic(x, a0, a1, a2, a3):
     return a0 + a1 * x + a2 * x ** 2 + a3 * x ** 3
@@ -670,3 +731,5 @@ class PlotSelector(QWidget):
 
     def check_reference(self):
         self._primary.setChecked(True)
+
+

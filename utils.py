@@ -2,10 +2,9 @@ import time
 from threading import Thread
 
 class Timer:
-    timestamp = 0
 
     def __init__(self):
-        self.reset()
+        self.timestamp = time.time()
 
     def reset(self):
         self.timestamp = time.time()
