@@ -84,7 +84,6 @@ class BlitManager:
         """Draw all the animated artists."""
         for i in range(len(self._artists)):
             if self.visible_artists[i]:
-                self.timer.reset()
                 self.canvas.figure.draw_artist(self._artists[i])
 
     def update(self): # not the bottleneck
@@ -121,10 +120,10 @@ class DataHandler(QObject):
         super().__init__()
         self.camera = camera
 
-        def frame_callback():
+        def frame_callback(_):
             self.awaiting_plot = True
 
-        self.camera.add_frame_callback(frame_callback)
+        self.camera.set_frame_callback(frame_callback)
         self.timer = QTimer()
         self.timer.setInterval(int(1000 / self.FPS))
         self.timer.timeout.connect(self._plot_data)
@@ -177,12 +176,6 @@ class Crosshair:
         self.horizontal.set_animated(True)
         self.horizontal.set_color(color)
         self.line = line
-        self.horizontal.set_antialiased(False)
-        self.horizontal.set_solid_joinstyle("miter")
-        self.horizontal.set_solid_capstyle("butt")
-        self.vertical.set_antialiased(False)
-        self.vertical.set_solid_joinstyle("miter")
-        self.vertical.set_solid_capstyle("butt")
 
         canvas.mpl_connect("draw_event", self.on_resize)
 
@@ -365,9 +358,9 @@ class RealTimePlot(QWidget):
         primary_axes.grid(True, color=color)
         primary_line = Line2D([], [], linewidth=1)
         primary_axes.add_line(primary_line)
-        primary_line.set_antialiased(False)
-        primary_line.set_solid_joinstyle("miter")
-        primary_line.set_solid_capstyle("butt")
+        #primary_line.set_antialiased(False)
+        #primary_line.set_solid_joinstyle("miter")
+        #primary_line.set_solid_capstyle("butt")
         matplotlib.rcParams["path.simplify"] = True
         matplotlib.rcParams["path.simplify_threshold"] = 1.0
 
@@ -389,10 +382,11 @@ class RealTimePlot(QWidget):
 
         reference_axes = self.figure.add_subplot()
         reference_axes.set_ylim(0, 1.2)
-        reference_line, = reference_axes.plot([], [], linewidth=1)
-        reference_line.set_antialiased(False)
-        reference_line.set_solid_joinstyle("miter")
-        reference_line.set_solid_capstyle("butt")
+        reference_line = Line2D([], [], linewidth=1)
+        reference_axes.add_line(reference_line)
+        #reference_line.set_antialiased(False)
+        #reference_line.set_solid_joinstyle("miter")
+        #reference_line.set_solid_capstyle("butt")
 
         # Reference crosshair readout
         self.reference_crosshair_readout = CrosshairReadout()
@@ -475,6 +469,9 @@ class RealTimePlot(QWidget):
 
     def set_raw_data(self, x, y, graph_selector: int):
         self.select_graph(graph_selector).set_raw_data(x, y)
+        if graph_selector == RealTimePlot.REFERENCE:
+            self.refresh_reference_x_bounds_control()
+            self.refresh_reference_y_bounds_control()
 
     def get_primary_raw_data(self):
         return self.primary_graph.get_raw_data()

@@ -1,6 +1,9 @@
+import os
+
 from PyQt6.QtCore import Qt, QObject, QEvent, QSize, QPoint
 from PyQt6.QtGui import QIcon, QAction, QPixmap
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QLabel, QLineEdit, QFileDialog, QSizePolicy, QPushButton, QMessageBox, QRadioButton, QMenu, QSplashScreen, QApplication, QToolButton, QMainWindow
+from PyQt6.QtWidgets import QWidget, QHBoxLayout, QLabel, QLineEdit, QFileDialog, QSizePolicy, QPushButton, QMessageBox, \
+    QRadioButton, QMenu, QSplashScreen, QApplication, QToolButton, QMainWindow
 
 
 class FileInput(QWidget):
@@ -14,13 +17,19 @@ class FileInput(QWidget):
         self.label = QLabel(label_text)
         self.line_edit = QLineEdit()
 
+        def choose_from_line_edit(text: str):
+            self._chosen_fname = text
+
+        self.line_edit.textEdited.connect(choose_from_line_edit)
+
         def pick_file():
             if is_save_file:
                 fname, _ = QFileDialog.getSaveFileName(filter=dialog_filter)
             else:
                 fname, _ = QFileDialog.getOpenFileName(filter=dialog_filter)
-            self.line_edit.setText(fname)
-            self._chosen_fname = fname
+            if fname:
+                self.line_edit.setText(fname)
+                self._chosen_fname = fname
 
         self.load_file_button = SimpleButton("Choose file", pick_file)
 
@@ -32,7 +41,11 @@ class FileInput(QWidget):
 
     def get_chosen_fname(self):
         if self._chosen_fname:
-            return self._chosen_fname
+            if os.path.exists(os.path.dirname(self._chosen_fname)):
+                return self._chosen_fname
+            else:
+                ErrorDialog("Could not find the folder you specified")
+                raise ValueError
         else:
             ErrorDialog("Please choose a file")
             raise ValueError
@@ -197,18 +210,26 @@ class PlayStopButton(ToolbarButton):
         self._play_callback = play_callback
         self._stop_callback = stop_callback
         self._playing = False
-        self.triggered.connect(self.set_state)
+        self.triggered.connect(self.toggle_state)
 
-    def set_state(self):
+    def set_playing(self):
+        self._playing = True
+        self._play_callback()
+        self.setIcon(self._stop_icon)
+        self.setToolTip("Stop acquisition")
+
+    def set_stopped(self):
+        self._playing = False
+        self._stop_callback()
+        self.setIcon(self._play_icon)
+        self.setToolTip("Acquire continuous spectrum")
+
+    def toggle_state(self):
         self._playing = not self._playing
         if self._playing:
-            self._play_callback()
-            self.setIcon(self._stop_icon)
-            self.setToolTip("Stop acquisition")
+            self.set_playing()
         else:
-            self._stop_callback()
-            self.setIcon(self._play_icon)
-            self.setToolTip("Acquire continuous spectrum")
+            self.set_stopped()
 
 
 class SplashScreen(QSplashScreen):
@@ -275,6 +296,7 @@ class FullscreenToggleButton(QPushButton):
             self.parent.setWindowState(Qt.WindowState.WindowNoState)
             self.primary_icon = self.fullscreen
             self.hover_icon = self.fullscreen_hover
+        self.setIcon(self.primary_icon)
 
 
 class MoveWindowSpacer(QWidget):

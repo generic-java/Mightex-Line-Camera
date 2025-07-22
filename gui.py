@@ -35,7 +35,7 @@ class Window(QMainWindow):
         self.toolbar = QToolBar("My main toolbar")
         self.create_toolbar()
 
-        self.resize(1200, 800)
+        self.resize(1100, 700)
         self.event_filter = ClearFocusFilter()
         self.installEventFilter(self.event_filter)
 
@@ -223,9 +223,11 @@ class Window(QMainWindow):
             self.camera.stop_spectrum_grab()
             self.camera.grab_spectrum_frames()
 
-        self.toolbar.addAction(PlayStopButton("Acquire continuous spectrum", self, grab_frames_continuous, self.camera.stop_spectrum_grab))
+        play_stop_button = PlayStopButton("Acquire continuous spectrum", self, grab_frames_continuous, self.camera.stop_spectrum_grab)
+        self.toolbar.addAction(play_stop_button)
 
         def grab_one_frame():
+            play_stop_button.set_stopped()
             self.camera.stop_spectrum_grab()
             self.camera.grab_spectrum_frames(1)
 
@@ -618,7 +620,7 @@ class DownloadFromNISTDialog(QDialog):
 
             fetch_waves(end_wavelength, start_wavelength, element, fpath)
             wavelengths, intensities = read_nist_data(fpath, start_wavelength, end_wavelength, intensity_fraction, full_width_half_max)
-            self.parent.load_reference_spectrum(wavelengths, intensities)
+            self.parent.load_spectrum(wavelengths, intensities, RealTimePlot.REFERENCE)
 
             self.close()
         except ValueError:
@@ -676,7 +678,7 @@ class OpenFromNISTDialog(QDialog):
             fpath = self.file_input.get_chosen_fname()
 
             wavelengths, intensities = read_nist_data(fpath, start_wavelength, end_wavelength, intensity_fraction, full_width_half_max)
-            self.parent.load_reference_spectrum(wavelengths, intensities)
+            self.parent.load_spectrum(wavelengths, intensities, RealTimePlot.REFERENCE)
 
             self.close()
         except ValueError:

@@ -39,8 +39,8 @@ class WorkMode:
     TRIGGER = 1
 
 class Frame:
-    def __init__(self, row, col, attributes, data_tuple):
-        for key, val in attributes:
+    def __init__(self, row: int, col: int, attributes: dict, data_tuple: tuple):
+        for key, val in attributes.items():
             setattr(self, key, val)
         self.row = row
         self.col = col
