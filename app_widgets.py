@@ -3,6 +3,8 @@ import os
 from PyQt6.QtCore import Qt, QObject, QEvent, QSize, QPoint
 from PyQt6.QtGui import QIcon, QAction, QPixmap, QColor
 from PyQt6.QtWidgets import QWidget, QHBoxLayout, QLabel, QLineEdit, QFileDialog, QSizePolicy, QPushButton, QRadioButton, QMenu, QSplashScreen, QApplication, QToolButton, QMainWindow, QVBoxLayout, QGraphicsDropShadowEffect, QDialog, QLayout
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+from matplotlib.figure import Figure
 
 
 class FileInput(QWidget):
@@ -43,11 +45,71 @@ class FileInput(QWidget):
             if os.path.exists(os.path.dirname(self._chosen_fname)):
                 return self._chosen_fname
             else:
-                ErrorDialog("Could not find the folder you specified")
+                ErrorDialog("Could not find the folder you specified.")
                 raise ValueError
         else:
-            ErrorDialog("Please choose a file")
+            ErrorDialog("Please choose a file.")
             raise ValueError
+
+class TeXWidget(QWidget):
+    def __init__(self, text="", width=None, height=None, textcolor="#6aee35", bg="#343434"):
+        super().__init__()
+        self.figure = Figure()
+
+        if width:
+            self.setFixedWidth(width)
+        if height:
+            self.setFixedHeight(height)
+
+        # Add FigureCanvasQTAgg widget to form
+        self.canvas = FigureCanvasQTAgg(self.figure)
+
+        container = QVBoxLayout()
+        container.setContentsMargins(0, 0, 0, 0)
+        container.addWidget(self.canvas)
+
+        # Clear figure
+        self.figure.clear()
+
+        # Set figure title
+        self.figure.set_facecolor(bg)
+
+        self.title = self.figure.suptitle(text, x=0.0, y=0.5, horizontalalignment="left", verticalalignment="center", color=textcolor)\
+
+        self.canvas.draw()
+        self.setLayout(container)
+
+    def set_text(self, text):
+        self.title.set_text(text)
+        self.canvas.draw()
+
+class CopyableCoefficient(QWidget):
+    def __init__(self, coeff_name: str, initial_value: float, math_text: TeXWidget):
+        super().__init__()
+        self.coeff_name = coeff_name
+        self.value = initial_value
+        self.math_text = math_text
+        container = QHBoxLayout()
+        container.addWidget(math_text)
+        def copy():
+            clipboard = QApplication.clipboard()
+            clipboard.setText(str(self.value))
+
+        button = SimpleButton("Copy", copy)
+        container.addWidget(button)
+        container.setContentsMargins(0, 0, 0, 0)
+        self.setLayout(container)
+
+    def set_value(self, value: float):
+        self.value = value
+        if abs(round(value) - float(value)) < 1e-10:
+            if round(value) == 0:
+                formatted_value = "0"
+            else:
+                formatted_value = f"{value:.0f}"
+        else:
+            formatted_value = f"{value:.10f}"
+        self.math_text.set_text(f"${self.coeff_name} = {formatted_value}$")
 
 
 class LabeledLineEdit(QWidget):
@@ -79,7 +141,7 @@ class LabeledLineEdit(QWidget):
         if len(text) == 1:
             return text
         else:
-            ErrorDialog("Please enter one character representing an element")
+            ErrorDialog("Please enter one character.")
             raise ValueError
 
     def get_int(self):
@@ -87,7 +149,7 @@ class LabeledLineEdit(QWidget):
         if text.isnumeric():
             return int(text)
         else:
-            ErrorDialog("Please enter an integer")
+            ErrorDialog("Please enter an integer.")
             raise ValueError
 
     def get_float(self):
@@ -95,7 +157,7 @@ class LabeledLineEdit(QWidget):
         try:
             return float(text)
         except ValueError as e:
-            ErrorDialog("Please enter an integer")
+            ErrorDialog("Please enter a float.")
             raise e
 
 
@@ -251,10 +313,10 @@ class WindowHandleButton(QPushButton):
         self.setIconSize(size)
         self.setIcon(primary_icon)
 
-    def enterEvent(self, a0):
+    def enterEvent(self, event=None):
         self.setIcon(self.hover_icon)
 
-    def leaveEvent(self, a0):
+    def leaveEvent(self, event=None):
         self.setIcon(self.primary_icon)
 
 class FullscreenToggleButton(QPushButton):
@@ -292,27 +354,42 @@ class FullscreenToggleButton(QPushButton):
         self.setIcon(self.primary_icon)
 
 class WindowBar(QWidget):
-    def __init__(self, title: str, parent: QWidget):
+    def __init__(self, title: str, parent: QWidget, movable: bool = True):
         super().__init__()
         layout = QHBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
         title_widget = QLabel(title)
-        spacer = MoveWindowSpacer(parent)
+        title_widget.setStyleSheet("""
+        QLabel {
+        font-size: 15px;
+        }
+        """)
         close_button = WindowHandleButton(QIcon("./res/icons/close_small.png"), QIcon("./res/icons/close_small_hover.png"), QSize(33, 28))
-        close_button.clicked.connect(parent.close)
+
+        def close():
+            parent.close()
+            close_button.leaveEvent()
+
+        close_button.clicked.connect(close)
         layout.addWidget(title_widget)
-        layout.addWidget(spacer)
+        if movable:
+            spacer = MoveWindowSpacer(parent)
+            layout.addWidget(spacer)
+        else:
+            layout.addStretch()
         layout.addWidget(close_button)
         self.setLayout(layout)
 
 
 class Dialog(QDialog):
-    def __init__(self, parent, title: str = ""):
+    def __init__(self, parent, title: str = "", movable: bool = True):
         super().__init__(parent)
+        self.setWindowTitle(title)
         self.setWindowFlag(Qt.WindowType.FramelessWindowHint)
+        self.setWindowFlag(Qt.WindowType.Tool)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         layout = QVBoxLayout()
-        self.window_container = WindowContainer(title, self)
+        self.window_container = WindowContainer(title, self, movable = movable)
         layout.addWidget(self.window_container)
         layout.setContentsMargins(20, 20, 20, 20)
         self.setLayout(layout)
@@ -329,11 +406,11 @@ class Dialog(QDialog):
 
 class WindowContainer(QWidget):
     _layout: QLayout = None
-    def __init__(self, window_title: str, parent: QWidget):
+    def __init__(self, window_title: str, parent: QWidget, movable: bool = True):
         super().__init__()
         self.master_layout = QVBoxLayout()
         self.master_layout.setContentsMargins(0, 0, 0, 0)
-        self.master_layout.addWidget(WindowBar(window_title, parent))
+        self.master_layout.addWidget(WindowBar(window_title, parent, movable = movable))
         self.setLayout(self.master_layout)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
 
@@ -375,9 +452,20 @@ class MoveWindowSpacer(QWidget):
             self.parent.move(event.globalPosition().toPoint() + self.drag_offset)
             event.accept()
 
+class SelectableLabel(QLabel):
+    def __init__(self, text=""):
+        super().__init__(text)
+        self.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.setCursor(Qt.CursorShape.IBeamCursor)
+
 class ErrorDialog(Dialog):
-    def __init__(self, text, title="Error"):
-        super().__init__(None, title=title)
+    def __init__(self, text, title="Error", width: int = None, height: int = None, movable = False):
+        super().__init__(None, title=title, movable=movable)
+
+        if width:
+            self.window_container.setFixedWidth(width)
+        if height:
+            self.window_container.setFixedHeight(height)
 
         container = QWidget()
         container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -387,11 +475,17 @@ class ErrorDialog(Dialog):
 
         upper_container = QHBoxLayout()
         icon_wrapper = QLabel()
-        icon_wrapper.setPixmap(QIcon("./res/icons/critical.png").pixmap(QSize(80, 80)))
+        icon_wrapper.setPixmap(QIcon("./res/icons/critical.png").pixmap(QSize(70, 70)))
         upper_container.addWidget(icon_wrapper)
-        error_text = QLabel(text)
-        error_text.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        upper_container.addWidget(error_text)
+        text_container = QVBoxLayout()
+        text_container.addStretch()
+        error_text = SelectableLabel(str(text))
+        error_text.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        text_container.addWidget(error_text)
+        text_container.addStretch()
+        if width:
+            error_text.setWordWrap(True)
+        upper_container.addLayout(text_container)
         layout.addLayout(upper_container)
 
         lower_container = QHBoxLayout()
@@ -402,4 +496,5 @@ class ErrorDialog(Dialog):
 
         layout.addLayout(lower_container)
         self.set_main_widget(container)
+
         self.exec()

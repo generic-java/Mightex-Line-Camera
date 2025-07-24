@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import *
 
 from app_widgets import FileInput, LabeledLineEdit, SimpleButton, ErrorDialog, IconButton, FixedSizeSpacer, \
     PlayStopButton, ToolbarButton, ClearFocusFilter, WindowHandleButton, MenuButton, MoveWindowSpacer, \
-    FullscreenToggleButton, Dialog
+    FullscreenToggleButton, Dialog, TeXWidget, CopyableCoefficient
 from camera_engine.mtsse import LineCamera
 from camera_engine.wrapper import PIXELS
 from loadwaves import load_waves, fetch_nist_data, read_nist_data, save_waves
@@ -25,7 +25,6 @@ class Window(QMainWindow):
 
         # All things plotting
         self.plot = RealTimePlot(DataHandler(camera))
-
         self.setCentralWidget(PlotContainer(self.plot, self.camera))
 
         # Menu
@@ -136,7 +135,9 @@ class Window(QMainWindow):
         calibrate_wavelength_map = calibrate_primary_wavelength.addAction("Map pixels to wavelengths")
         calibrate_wavelength_map.triggered.connect(map_pixels_primary_dialog.show)
 
+        enter_coeff_dialog_primary = EnterCoeffDialog(self, RealTimePlot.PRIMARY)
         calibrate_wavelength_coeff = calibrate_primary_wavelength.addAction("Enter coefficients")
+        calibrate_wavelength_coeff.triggered.connect(enter_coeff_dialog_primary.open)
         # End region
 
         # Region calibrate reference spectrum
@@ -148,7 +149,9 @@ class Window(QMainWindow):
         calibrate_reference_wavelength_map = calibrate_reference_wavelength.addAction("Map pixels to wavelengths")
         calibrate_reference_wavelength_map.triggered.connect(map_pixels_reference_dialog.show)
 
+        enter_coeff_dialog_reference = EnterCoeffDialog(self, RealTimePlot.REFERENCE)
         calibrate_reference_wavelength_coeff = calibrate_reference_wavelength.addAction("Enter coefficients")
+        calibrate_reference_wavelength_coeff.triggered.connect(enter_coeff_dialog_reference.open)
         # End region
 
         # Help menu
@@ -230,6 +233,7 @@ class Window(QMainWindow):
             self.camera.grab_spectrum_frames(1)
 
         self.toolbar.addAction(ToolbarButton(QIcon("./res/icons/camera.png"),"Acquire frame", self, callback=grab_one_frame))
+        self.toolbar.addAction(ToolbarButton(QIcon("./res/icons/background.png"), "Take background", self, callback=grab_one_frame))
 
     def save_file(self, dialog_filter=""):
         fname, _ = QFileDialog.getSaveFileName(filter=dialog_filter)
@@ -366,7 +370,7 @@ class PlotContainer(QWidget):
 
 
 class MapInput(QWidget):
-    def __init__(self, removable=True):
+    def __init__(self, parent_layout: QLayout, removable=True):
         super().__init__()
         layout = QHBoxLayout()
         self.pixel_input = LabeledLineEdit("Pixel:")
@@ -380,7 +384,11 @@ class MapInput(QWidget):
         if removable:
             layout.addWidget(FixedSizeSpacer(width=20))
 
-            delete_button = IconButton(QIcon("./res/icons/trash.png"), self.hide)
+            def remove():
+                self.hide()
+                parent_layout.removeWidget(self)
+
+            delete_button = IconButton(QIcon("./res/icons/trash.png"), remove)
             delete_button.setFixedSize(QSize(20, 20))
             layout.addWidget(delete_button)
 
@@ -394,6 +402,7 @@ class MapInput(QWidget):
         return self.wl_input.get_float()
 
 
+# noinspection PyShadowingNames
 class MaxPixelsDialog(Dialog):
     def __init__(self, parent: Window, graph_type: int = RealTimePlot.PRIMARY):
         super().__init__(parent, "Map pixels to wavelengths")
@@ -408,17 +417,62 @@ class MaxPixelsDialog(Dialog):
         map_container.setFixedSize(QSize(400, 175))
         self.container_widget = QWidget()
         self.container_widget.setObjectName("map-pixels-container")
-        container_layout = QVBoxLayout()
-        self.container_widget.setLayout(container_layout)
+        map_container_layout = QVBoxLayout()
+        self.container_widget.setLayout(map_container_layout)
         map_container.setWidget(self.container_widget)
         layout.addWidget(map_container)
 
         def add_map_item():
-            container_layout.addWidget(MapInput(removable=True))
+            map_container_layout.addWidget(MapInput(map_container_layout, removable=True))
 
         add_map_button = SimpleButton("Add map item", add_map_item)
-        load_map_button = SimpleButton("Load map", add_map_item)
-        save_map_button = SimpleButton("Save map", add_map_item)
+
+        def load_map():
+            fname, _ = QFileDialog.getOpenFileName(filter="CSV Files (*.csv)")
+            if not fname:
+                return
+            try:
+                pixels, wavelengths = load_waves(fname)
+                map_widgets = self.get_map_inputs()
+                for i in range(len(pixels)):
+                    if i < len(map_widgets):
+                        map_widget = map_widgets[i]
+                    else:
+                        map_widget = MapInput(map_container_layout, removable=True)
+                        map_container_layout.addWidget(map_widget)
+
+                    map_widget.pixel_input.set_text(f"{pixels[i]:.0f}")
+                    map_widget.wl_input.set_text(str(wavelengths[i]))
+
+            except IOError:
+                ErrorDialog("Could not read the file.  Check that it exists and is in the correct format.", width=400)
+                return
+            except RuntimeError as e:
+                ErrorDialog(e, width=400)
+                return
+
+        def save_map():
+            fname, _ = QFileDialog.getSaveFileName(filter="CSV Files (*.csv)")
+            if not fname:
+                return
+            try:
+                map_widgets = self.get_map_inputs()
+                pixels, wavelengths = np.zeros(len(map_widgets)), np.zeros(len(map_widgets))
+                for i in range(len(map_widgets)):
+                    pixels[i] = map_widgets[i].get_pixel()
+                    wavelengths[i] = map_widgets[i].get_wavelength()
+
+                save_waves(fname, pixels, wavelengths)
+
+            except IOError:
+                ErrorDialog("Could not save file.  Check that it is not already open in another program.", width=400)
+                return
+            except RuntimeError as e:
+                ErrorDialog(e, width=400)
+                return
+
+        load_map_button = SimpleButton("Load map", load_map)
+        save_map_button = SimpleButton("Save map", save_map)
 
         load_save_container = QHBoxLayout()
         load_save_container.addWidget(load_map_button)
@@ -433,11 +487,28 @@ class MaxPixelsDialog(Dialog):
         layout.addLayout(load_save_container)
         layout.addStretch()
 
-        map_button = SimpleButton("Calculate map", self.map)
+        math_container = QVBoxLayout()
+
+        equation_widget = TeXWidget(text = "$y = a_0 + a_1 x + a_2 x^2 + a_3 x^3$", width=250, height=40)
+        math_container.addWidget(equation_widget)
+
+        coeff_container_outer = QHBoxLayout()
+        coeff_container = QVBoxLayout()
+        self.coeff_widgets = [CopyableCoefficient(f"a_{i}", 0, TeXWidget(width=250, height=40)) for i in range(4)]
+        [coeff_container.addWidget(coeff_label) for coeff_label in self.coeff_widgets]
+        self.display_coefficients()
+        coeff_container_outer.addLayout(coeff_container)
+        coeff_container_outer.addStretch()
+
+        math_container.addLayout(coeff_container_outer)
+
+        map_button = SimpleButton("Calculate fit", self.calculate_fit)
         map_button_container = QHBoxLayout()
         map_button_container.addWidget(map_button)
         map_button_container.addStretch()
         layout.addLayout(map_button_container)
+
+        layout.addLayout(math_container)
 
         close_button = SimpleButton("Close", self.close)
         close_button_container = QHBoxLayout()
@@ -448,26 +519,96 @@ class MaxPixelsDialog(Dialog):
         layout.setContentsMargins(10, 10, 10, 10)
 
         for i in range(2):
-            container_layout.addWidget(MapInput(removable=False))
+            map_container_layout.addWidget(MapInput(map_container_layout, removable=False))
 
         self.set_main_layout(layout)
-
 
     def show(self):
         super().show()
         self.setFixedSize(self.size())
-    def map(self):
+
+    def display_coefficients(self):
+        coefficients = self.parent.plot.get_primary_graph().get_fitting_params()
+        for i in range(len(coefficients)):
+            self.coeff_widgets[i].set_value(coefficients[i])
+
+    def get_map_inputs(self):
+        map_inputs = []
+        for map_input in self.container_widget.findChildren(MapInput):
+            if not map_input.isHidden():
+                map_inputs.append(map_input)
+
+        return map_inputs
+
+    def calculate_fit(self):
         try:
             x_data = []
             y_data = []
-            for widget in self.container_widget.findChildren(MapInput):
-                if not widget.isHidden():
-                    x_data.append(widget.get_pixel())
-                    y_data.append(widget.get_wavelength())
+            for widget in self.get_map_inputs():
+                x_data.append(widget.get_pixel())
+                y_data.append(widget.get_wavelength())
 
             self.parent.plot.fit(x_data, y_data, self.graph_type)
+            self.display_coefficients()
+        except ValueError:
+            return
         except Exception as e:
-            print(e)
+            ErrorDialog(str(e), width=400)
+
+class EnterCoeffDialog(Dialog):
+    def __init__(self, parent: Window, graph_type: int):
+        super().__init__(parent, title="Enter calibration coefficients")
+        self.parent = parent
+        self.graph_type = graph_type
+        layout = QVBoxLayout()
+
+        equation_widget = TeXWidget(text = "$y = a_0 + a_1 x + a_2 x^2 + a_3 x^3$", width=250, height=40)
+        layout.addWidget(equation_widget)
+
+        self.entries = []
+        for i in range(4):
+            container = QHBoxLayout()
+            container.addWidget(TeXWidget(f"$a_{i}:$", width=30, height = 40))
+            entry = QLineEdit()
+            entry.setFixedWidth(150)
+            self.entries.append(entry)
+            container.addWidget(entry)
+            container.addStretch()
+            layout.addLayout(container)
+
+        close_button = SimpleButton("Calculate fit", self.calculate_fit)
+        bottom_hbox = QHBoxLayout()
+        bottom_hbox.addStretch()
+        bottom_hbox.addWidget(close_button)
+        layout.addStretch()
+        layout.addLayout(bottom_hbox)
+
+        layout.setContentsMargins(10, 10, 10, 10)
+        self.set_main_layout(layout)
+
+    def open(self):
+        super().open()
+        current_coefficients = self.parent.plot.get_graph(self.graph_type).get_fitting_params()
+        for i in range(len(self.entries)):
+            value = current_coefficients[i]
+            if abs(round(value) - float(value)) < 1e-5:
+                formatted_value = f"{value:.0f}"
+            else:
+                formatted_value = f"{value:.10f}"
+            self.entries[i].setText(formatted_value)
+
+    def calculate_fit(self):
+        try:
+            coefficients = []
+            for entry in self.entries:
+                coeff = float(entry.text())
+                coefficients.append(coeff)
+            self.parent.plot.set_coefficients(tuple(coefficients), self.graph_type)
+            self.close()
+        except ValueError:
+            ErrorDialog("Please enter valid numbers for each entry.")
+        except Exception as e:
+            ErrorDialog(str(e), width=400)
 
 class SaveFileDialog(Dialog):
     # noinspection PyUnresolvedReferences
@@ -483,8 +624,7 @@ class SaveFileDialog(Dialog):
         else:
             self.delimiter_input = None
 
-
-        label = QLabel("Column 0: Pixel value\nColumn 1: Calibrated wavelength value\nColumn 2: Intensity")
+        label = QLabel("\nColumn 0: Pixel value\n\nColumn 1: Calibrated wavelength value\n\nColumn 2: Intensity\n")
         layout.addWidget(label)
 
         self.file_input = FileInput(dialog_filter=dialog_filter, is_save_file=True)
@@ -517,9 +657,12 @@ class SaveFileDialog(Dialog):
                 delimiter = ","
 
             save_waves(self.file_input.get_chosen_fname(), pixels, wavelengths, intensities, delimiter=delimiter)
-
-        finally:
             self.close()
+
+        except ValueError:
+            return
+
+
 class LoadSpectrumDialog(Dialog):
     def __init__(self, parent: Window, graph_selector):
         super().__init__(parent, "Load primary spectrum" if graph_selector == RealTimePlot.PRIMARY else "Load reference spectrum")
@@ -563,7 +706,7 @@ class LoadSpectrumDialog(Dialog):
             wavelength_col = self.wavelength_column_input.get_int()
             intensity_col = self.intensity_column_input.get_int()
 
-            wavelengths, intensities = load_waves(fname, row_start=row_start, wavelength_col=wavelength_col, intensity_col=intensity_col, delimiter=self.delimiter_input.get_text())
+            wavelengths, intensities = load_waves(fname, row_start=row_start, x_col=wavelength_col, y_col=intensity_col, delimiter=self.delimiter_input.get_text())
             self.parent.load_spectrum(wavelengths, intensities, self.graph_selector)
             self.close()
         except ValueError:
@@ -631,7 +774,7 @@ class DownloadFromNISTDialog(Dialog):
             ErrorDialog("The connection timed out.  Check your internet connection.")
         except AttributeError as e:
             print(e)
-            ErrorDialog("NIST could not generate a spectrum based on your inputs")
+            ErrorDialog("NIST could not generate a spectrum based on your inputs.")
 
 
 class OpenFromNISTDialog(Dialog):

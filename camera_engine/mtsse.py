@@ -60,7 +60,8 @@ install_callback(_handle_new_frame)
 _camera_registry = {}
 
 def start_engine():
-    init_device()
+    if init_device() == 0:
+        raise ConnectionError("Failed to connect to the camera")
 
 def teardown_engine():
     uninit_device()

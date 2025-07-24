@@ -331,7 +331,7 @@ class ReferenceGraph(Graph):
 class RealTimePlot(QWidget):
     style = {
         "background": "#343434",
-        "color": "#6aee35"
+        "color": "#e44cc3"
     }
 
     PRIMARY = 0
@@ -342,9 +342,11 @@ class RealTimePlot(QWidget):
 
     def __init__(self, data_handler: DataHandler, **kwargs):
         super().__init__()
+        matplotlib.rcParams["path.simplify"] = True
+        matplotlib.rcParams["path.simplify_threshold"] = 1.0
         self.selected_graph = RealTimePlot.PRIMARY
         self.style.update(kwargs)
-        self.x = np.arange(0, PIXELS, 1)
+        self.pixel_array = np.arange(0, PIXELS, 1)
         self.figure = Figure()
         self.canvas = FigureCanvas(self.figure)
         self._blit_manager = BlitManager(self.canvas)
@@ -363,14 +365,9 @@ class RealTimePlot(QWidget):
         primary_axes = self.figure.add_subplot()
         primary_axes.set_xlim(0, PIXELS)
         primary_axes.set_ylim(0, 65535)
-        primary_axes.grid(True, color=color)
+        primary_axes.grid(True, color="#4b6b71")
         primary_line = Line2D([], [], linewidth=1)
         primary_axes.add_line(primary_line)
-        #primary_line.set_antialiased(False)
-        #primary_line.set_solid_joinstyle("miter")
-        #primary_line.set_solid_capstyle("butt")
-        matplotlib.rcParams["path.simplify"] = True
-        matplotlib.rcParams["path.simplify_threshold"] = 1.0
 
         # Primary crosshair readout
         self.primary_crosshair_readout = CrosshairReadout()
@@ -392,9 +389,6 @@ class RealTimePlot(QWidget):
         reference_axes.set_ylim(0, 1.2)
         reference_line = Line2D([], [], linewidth=1)
         reference_axes.add_line(reference_line)
-        #reference_line.set_antialiased(False)
-        #reference_line.set_solid_joinstyle("miter")
-        #reference_line.set_solid_capstyle("butt")
 
         # Reference crosshair readout
         self.reference_crosshair_readout = CrosshairReadout()
@@ -420,7 +414,7 @@ class RealTimePlot(QWidget):
         self.primary_unit_control = WavelengthPixelButton(self.primary_graph)
 
         # Reference unit control
-        self.reference_unit_control = WavelengthPixelButton(self.reference_graph, self.refresh_reference_x_bounds_control)
+        self.reference_unit_control = WavelengthPixelButton(self.reference_graph, lambda _: self.refresh_reference_x_bounds_control)
 
         # Primary y limits
         self.primary_y_min = LabeledLineEdit("Min y:", on_edit=self.relim_primary_y, max_text_width=75)
@@ -472,11 +466,17 @@ class RealTimePlot(QWidget):
         primary_line.set_color("#e44cc3")
         reference_line.set_color("orange")
 
-    def select_plot(self, selected_plot: int):
-        self.selected_graph = selected_plot
+    def get_primary_graph(self):
+        return self.primary_graph
+
+    def get_reference_graph(self):
+        return self.reference_graph
+
+    def select_graph(self, selected_graph: int):
+        self.selected_graph = selected_graph
 
     def set_raw_data(self, x, y, graph_selector: int):
-        self.select_graph(graph_selector).set_raw_data(x, y)
+        self.get_graph(graph_selector).set_raw_data(x, y)
         if graph_selector == RealTimePlot.REFERENCE:
             self.refresh_reference_x_bounds_control()
             self.refresh_reference_y_bounds_control()
@@ -495,10 +495,10 @@ class RealTimePlot(QWidget):
 
     def refresh(self, frame: Frame | None):
         if frame:
-            self.set_raw_data(self.x, frame.raw_data, RealTimePlot.PRIMARY)
+            self.set_raw_data(self.pixel_array, frame.raw_data, RealTimePlot.PRIMARY)
 
     def move_crosshair(self, increment: int):
-        graph = self.select_graph(self.selected_graph)
+        graph = self.get_graph(self.selected_graph)
         graph.get_crosshair().increment_index(increment)
 
     # noinspection PyTypeChecker
@@ -507,7 +507,7 @@ class RealTimePlot(QWidget):
         if focused:
             focused.clearFocus()
 
-        graph = self.select_graph(self.selected_graph)
+        graph = self.get_graph(self.selected_graph)
 
         transform = graph.get_axes().transData.inverted()  # This makes a transform that converts display coordinates to data coordinates
         data_x, data_y = transform.transform((event.x, event.y))  # Transforms display coordinates to data coordinates
@@ -522,13 +522,13 @@ class RealTimePlot(QWidget):
         self._blit_manager.force_refresh()
         self._blit_manager.update()
 
-    def select_graph(self, graph_selector: int) -> Graph:
+    def get_graph(self, graph_selector: int) -> Graph:
         if graph_selector != 0 and graph_selector != 1:
             raise ValueError(f"Expected 0 or 1 but received {graph_selector}")
         return self.primary_graph if graph_selector == RealTimePlot.PRIMARY else self.reference_graph
 
     def _refresh_graph(self, graph_selector):
-        graph = self.select_graph(graph_selector)
+        graph = self.get_graph(graph_selector)
         graph.get_crosshair().refresh()
         self._blit_manager.force_refresh()
         self._blit_manager.update()
@@ -573,7 +573,7 @@ class RealTimePlot(QWidget):
 
     # noinspection PyTupleAssignmentBalance
     def fit(self, pixels, wavelengths, graph_selector: int):
-        graph = self.select_graph(graph_selector)
+        graph = self.get_graph(graph_selector)
         graph.set_unit_type(Graph.WAVELENGTH)
         if len(pixels) == 2:
             (a0, a1), _ = curve_fit(linear, pixels, wavelengths)
@@ -585,6 +585,19 @@ class RealTimePlot(QWidget):
             fitting_params, _ = curve_fit(cubic, pixels, wavelengths)
             graph.set_fitting_params(fitting_params)
 
+        self._after_fit(graph, graph_selector)
+
+    def set_coefficients(self, fitting_params: tuple, graph_selector: int):
+        if len(fitting_params) != 4:
+            raise ValueError(f"Expected 4 coefficients and got {len(fitting_params):.0f}")
+
+        graph = self.get_graph(graph_selector)
+        graph.set_unit_type(Graph.WAVELENGTH)
+        graph.set_fitting_params(fitting_params)
+        self._after_fit(graph, graph_selector)
+
+
+    def _after_fit(self, graph, graph_selector):
         graph.update_x_bounds(refresh=False)
         if graph_selector == RealTimePlot.PRIMARY:
             self.primary_unit_control.check_wavelength()
@@ -594,10 +607,9 @@ class RealTimePlot(QWidget):
         else:
             self.reference_unit_control.check_wavelength()
 
+
         self._blit_manager.force_refresh()  # Redraw the entire plot, including the background
         self._blit_manager.update()
-
-        print(graph.get_fitting_params())  # TODO: replace with visual display
 
     def set_unit(self, graph_selector: int, to_set: Graph, unit_type: int):
         if not 0 <= unit_type <= 1 or type(unit_type) != int:
@@ -605,7 +617,7 @@ class RealTimePlot(QWidget):
 
         if unit_type != to_set.unit_type:
             to_set.unit_type = unit_type
-            self.select_graph(graph_selector).update_x_bounds()
+            self.get_graph(graph_selector).update_x_bounds()
 
     def get_primary_crosshair_readout(self) -> CrosshairReadout:
         return self.primary_crosshair_readout
@@ -650,6 +662,7 @@ class RealTimePlot(QWidget):
         self.reference_x_min.set_text(f"{x_min:.2f}")
         self.reference_x_max.set_text(f"{x_max:.2f}")
 
+
     def refresh_reference_y_bounds_control(self):
         y_min, y_max = self.reference_graph.get_y_bounds()
         self.reference_y_min.set_text(f"{y_min:.2f}")
@@ -688,10 +701,13 @@ class WavelengthPixelButton(QWidget):
     def __init__(self, graph: Graph, on_toggle=None):
         super().__init__()
         layout = QHBoxLayout()
+        self._blocking_callback = False
         self._pixel = ArrowImmuneRadioButton("Pixel", self)
         self._pixel.setChecked(True)
 
         def toggle():
+            if self._blocking_callback:
+                return
             unit_type = Graph.PIXEL if self._pixel.isChecked() else Graph.WAVELENGTH
             graph.set_unit_type(unit_type)
             if on_toggle:
@@ -704,11 +720,15 @@ class WavelengthPixelButton(QWidget):
         self.setFixedWidth(200)
         self.setLayout(layout)
 
-    def check_wavelength(self):
+    def check_wavelength(self, block_callback=True):
+        self._blocking_callback = block_callback
         self._wavelength.setChecked(True)
+        self._blocking_callback = False
 
-    def check_pixel(self):
+    def check_pixel(self, block_callback=True):
+        self._blocking_callback = block_callback
         self._pixel.setChecked(True)
+        self._blocking_callback = False
 
 
 class PlotSelector(QWidget):
@@ -720,9 +740,9 @@ class PlotSelector(QWidget):
 
         def toggle():
             if self._primary.isChecked():
-                plot.select_plot(RealTimePlot.PRIMARY)
+                plot.select_graph(RealTimePlot.PRIMARY)
             else:
-                plot.select_plot(RealTimePlot.REFERENCE)
+                plot.select_graph(RealTimePlot.REFERENCE)
 
         self._primary.toggled.connect(toggle)
         self._reference = ArrowImmuneRadioButton("Reference spectrum", self)

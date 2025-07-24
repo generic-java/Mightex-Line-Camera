@@ -3,7 +3,7 @@ import sys
 from PyQt6.QtGui import QFontDatabase
 from PyQt6.QtWidgets import QApplication
 
-from app_widgets import SplashScreen
+from app_widgets import SplashScreen, ErrorDialog
 from camera_engine.mtsse import *
 from gui import Window, load_stylesheet
 
@@ -16,7 +16,13 @@ def main():
     QFontDatabase.addApplicationFont("./res/fonts/aharoni/ahronbd.ttf")
     QFontDatabase.addApplicationFont("./res/fonts/roboto/static/Roboto-SemiBold.ttf")
 
-    start_engine()
+    no_camera = False
+
+    try:
+        start_engine()
+    except ConnectionError:
+        no_camera = True
+
     print("Camera engine initialized.")
     splash.close()
 
@@ -24,6 +30,8 @@ def main():
     window = Window(camera)
 
     window.show()
+    if no_camera:
+        ErrorDialog("No camera was detected.  Restart the app to try again.", "Connection error")
     app.exec()
     teardown_engine()
 

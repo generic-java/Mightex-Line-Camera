@@ -100,25 +100,25 @@ def read_nist_data(fpath, wavelength_min, wavelength_max, intensity_fraction, fu
     generated_intensities = shape_lines(generated_wavelengths, wavelengths, intensities, intensity_fraction, full_width_half_max)
     return generated_wavelengths, generated_intensities
 
-def load_waves(fpath: str, row_start=0, wavelength_col=0, intensity_col=0, delimiter: str=","):
-    wavelengths = []
-    intensities = []
+def load_waves(fpath: str, row_start=0, x_col=0, y_col=1, delimiter: str= ","):
+    x = []
+    y = []
     with open(fpath, "r") as file:
         reader = csv.reader(file, delimiter=delimiter)
         line_num = 0
         for line in reader:
             try:
                 if line_num >= row_start:
-                    wavelengths.append(float(line[wavelength_col]))
-                    intensities.append(float(line[intensity_col]))
+                    x.append(float(line[x_col]))
+                    y.append(float(line[y_col]))
             except ValueError:
                 pass
             finally:
                 line_num += 1
 
-    return np.array(wavelengths), np.array(intensities)
+    return np.array(x), np.array(y)
 
-def save_waves(fpath, first_column, second_column, third_column, delimiter=","):
+def save_waves(fpath, first_column, second_column, third_column=None, delimiter=","):
     with open(fpath, "w") as file:
         if third_column:
             data = np.column_stack((first_column, second_column, third_column))
