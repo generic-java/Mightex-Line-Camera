@@ -8,7 +8,6 @@ margin: 0px;
 MenuButton {
 background-color: #343434;
 color: #6aee35;
-
 padding: 5px 10px 5px 10px;
 border: none;
 font-family: "Roboto";
@@ -76,6 +75,11 @@ background-color: #343434;
 color: #6aee35;
 }
 
+WindowContainer {
+background-color: #343434;
+color: #6aee35;
+}
+
 SimpleButton {
 background-color: #6aee35;
 color: #343434;
@@ -88,6 +92,16 @@ font-size: 14px;
 
 IconButton {
 background-color: transparent;
+}
+
+QMessageBox QPushButton {
+background-color: #6aee35;
+color: #343434;
+padding: 5px 10px 5px 10px;
+border: none;
+border-radius: 5px;
+font-family: "Roboto";
+font-size: 14px;
 }
 
 QPushButton:hover {
@@ -206,4 +220,8 @@ border: none;
 padding: 0px;
 margin: 0px;
 border: none;
+}
+
+WindowBar QLabel {
+margin: 5px;
 }

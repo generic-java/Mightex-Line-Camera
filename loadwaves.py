@@ -1,6 +1,8 @@
 import csv
 import re
+import socket
 from urllib import request
+from urllib.error import URLError
 
 import numpy as np
 from bs4 import BeautifulSoup
@@ -14,8 +16,9 @@ with open("./res/files/invalid_nist.txt") as nist_file:
     # noinspection PyRedeclaration
     _invalid_nist = nist_file.read()
 
-def fetch_waves(upper, lower, element, save_path):
+def fetch_nist_data(upper, lower, element, save_path, timeout=10):
     """
+    :param timeout: The timeout of the operation in seconds
     :param save_path: The path to save the data to
     :param upper: Upper wavelength
     :param lower: Lower wavelength
@@ -24,7 +27,6 @@ def fetch_waves(upper, lower, element, save_path):
     """
 
     element = element.replace(" ", "%20")
-
     url = f"https://physics.nist.gov/cgi-bin/ASD/lines1.pl?spectra={element}&limits_type=0&low_w={lower}&upp_w={upper}&unit=1&de=0&format=3&line_out=0&remove_js=on&en_unit=0&output=0&bibrefs=1&page_size=15&show_obs_wl=1&show_calc_wl=1&unc_out=1&order_out=0&max_low_enrg=&show_av=2&max_upp_enrg=&tsb_value=0&min_str=&A_out=0&intens_out=on&max_str=&allowed_out=1&forbid_out=1&min_accur=&min_intens=&conf_out=on&term_out=on&enrg_out=on&J_out=on&submit=Retrieve+Data"
 
     print(url)
@@ -41,7 +43,7 @@ def fetch_waves(upper, lower, element, save_path):
     req = request.Request(url, headers=headers)
 
     try:
-        with request.urlopen(req) as response:
+        with request.urlopen(req, timeout=timeout) as response:
             html_bytes = response.read()
             html = html_bytes.decode("utf-8")
             soup = BeautifulSoup(html, "html.parser")
@@ -49,8 +51,12 @@ def fetch_waves(upper, lower, element, save_path):
             with open(save_path, "w") as file:
                 file.write(data)
 
+    except URLError as e:
+        if isinstance(e.reason, socket.timeout):
+            raise TimeoutError
     except Exception as e:
         print("Error:", e)
+        print(type(e))
 
 def read_nist_data(fpath, wavelength_min, wavelength_max, intensity_fraction, full_width_half_max):
     wavelengths = []
@@ -114,11 +120,18 @@ def load_waves(fpath: str, row_start=0, wavelength_col=0, intensity_col=0, delim
 
 def save_waves(fpath, first_column, second_column, third_column, delimiter=","):
     with open(fpath, "w") as file:
-        data = np.column_stack((first_column, second_column, third_column))
-        text = ""
-        for row in data:
-            text += str(row[0]) + delimiter + str(row[1]) + delimiter + str(row[2]) + "\n"
-        file.write(text)
+        if third_column:
+            data = np.column_stack((first_column, second_column, third_column))
+            text = ""
+            for row in data:
+                text += str(row[0]) + delimiter + str(row[1]) + delimiter + str(row[2]) + "\n"
+            file.write(text)
+        else:
+            data = np.column_stack((first_column, second_column))
+            text = ""
+            for row in data:
+                text += str(row[0]) + delimiter + str(row[1]) + "\n"
+            file.write(text)
 
 def main():
     wavelengths, intensities = read_nist_data(r"C:\Users\power\Downloads\waves.txt", 400, 700, 0.1, 2)

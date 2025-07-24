@@ -1,9 +1,8 @@
 import os
 
 from PyQt6.QtCore import Qt, QObject, QEvent, QSize, QPoint
-from PyQt6.QtGui import QIcon, QAction, QPixmap
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QLabel, QLineEdit, QFileDialog, QSizePolicy, QPushButton, QMessageBox, \
-    QRadioButton, QMenu, QSplashScreen, QApplication, QToolButton, QMainWindow
+from PyQt6.QtGui import QIcon, QAction, QPixmap, QColor
+from PyQt6.QtWidgets import QWidget, QHBoxLayout, QLabel, QLineEdit, QFileDialog, QSizePolicy, QPushButton, QRadioButton, QMenu, QSplashScreen, QApplication, QToolButton, QMainWindow, QVBoxLayout, QGraphicsDropShadowEffect, QDialog, QLayout
 
 
 class FileInput(QWidget):
@@ -99,13 +98,7 @@ class LabeledLineEdit(QWidget):
             ErrorDialog("Please enter an integer")
             raise e
 
-class ErrorDialog(QMessageBox):
-    def __init__(self, text):
-        super().__init__()
-        self.setText(text)
-        self.setIcon(QMessageBox.Icon.Critical)
-        self.setWindowTitle("Error")
-        self.exec()
+
 
 
 class SimpleButton(QPushButton):
@@ -298,12 +291,70 @@ class FullscreenToggleButton(QPushButton):
             self.hover_icon = self.fullscreen_hover
         self.setIcon(self.primary_icon)
 
+class WindowBar(QWidget):
+    def __init__(self, title: str, parent: QWidget):
+        super().__init__()
+        layout = QHBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        title_widget = QLabel(title)
+        spacer = MoveWindowSpacer(parent)
+        close_button = WindowHandleButton(QIcon("./res/icons/close_small.png"), QIcon("./res/icons/close_small_hover.png"), QSize(33, 28))
+        close_button.clicked.connect(parent.close)
+        layout.addWidget(title_widget)
+        layout.addWidget(spacer)
+        layout.addWidget(close_button)
+        self.setLayout(layout)
+
+
+class Dialog(QDialog):
+    def __init__(self, parent, title: str = ""):
+        super().__init__(parent)
+        self.setWindowFlag(Qt.WindowType.FramelessWindowHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        layout = QVBoxLayout()
+        self.window_container = WindowContainer(title, self)
+        layout.addWidget(self.window_container)
+        layout.setContentsMargins(20, 20, 20, 20)
+        self.setLayout(layout)
+
+    def set_main_layout(self, layout: QLayout):
+        self.window_container.set_main_layout(layout)
+
+    def set_main_widget(self, widget: QWidget):
+        container = QVBoxLayout()
+        container.setContentsMargins(0, 0, 0, 0)
+        container.addWidget(widget)
+        self.set_main_layout(container)
+
+
+class WindowContainer(QWidget):
+    _layout: QLayout = None
+    def __init__(self, window_title: str, parent: QWidget):
+        super().__init__()
+        self.master_layout = QVBoxLayout()
+        self.master_layout.setContentsMargins(0, 0, 0, 0)
+        self.master_layout.addWidget(WindowBar(window_title, parent))
+        self.setLayout(self.master_layout)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+
+        shadow = QGraphicsDropShadowEffect(parent)
+        shadow.setXOffset(0)
+        shadow.setYOffset(0)
+        shadow.setBlurRadius(20)
+        shadow.setColor(QColor(0, 0, 0, 175))
+        self.setGraphicsEffect(shadow)
+
+    def set_main_layout(self, layout: QLayout):
+        if self._layout:
+            self.master_layout.removeItem(self._layout)
+        self._layout = layout
+        self.master_layout.addLayout(layout)
 
 class MoveWindowSpacer(QWidget):
     dragging_window = False
     drag_offset: QPoint = QPoint()
 
-    def __init__(self, window: QMainWindow):
+    def __init__(self, window: QWidget):
         super().__init__()
         self.parent = window
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -323,3 +374,32 @@ class MoveWindowSpacer(QWidget):
         if self.dragging_window:
             self.parent.move(event.globalPosition().toPoint() + self.drag_offset)
             event.accept()
+
+class ErrorDialog(Dialog):
+    def __init__(self, text, title="Error"):
+        super().__init__(None, title=title)
+
+        container = QWidget()
+        container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
+        layout = QVBoxLayout()
+        container.setLayout(layout)
+
+        upper_container = QHBoxLayout()
+        icon_wrapper = QLabel()
+        icon_wrapper.setPixmap(QIcon("./res/icons/critical.png").pixmap(QSize(80, 80)))
+        upper_container.addWidget(icon_wrapper)
+        error_text = QLabel(text)
+        error_text.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        upper_container.addWidget(error_text)
+        layout.addLayout(upper_container)
+
+        lower_container = QHBoxLayout()
+        lower_container.addStretch()
+        ok_button = SimpleButton("OK", self.close)
+        lower_container.addWidget(ok_button)
+        lower_container.addStretch()
+
+        layout.addLayout(lower_container)
+        self.set_main_widget(container)
+        self.exec()

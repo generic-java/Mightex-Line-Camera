@@ -8,10 +8,10 @@ from PyQt6.QtWidgets import *
 
 from app_widgets import FileInput, LabeledLineEdit, SimpleButton, ErrorDialog, IconButton, FixedSizeSpacer, \
     PlayStopButton, ToolbarButton, ClearFocusFilter, WindowHandleButton, MenuButton, MoveWindowSpacer, \
-    FullscreenToggleButton
+    FullscreenToggleButton, Dialog
 from camera_engine.mtsse import LineCamera
 from camera_engine.wrapper import PIXELS
-from loadwaves import load_waves, fetch_waves, read_nist_data, save_waves
+from loadwaves import load_waves, fetch_nist_data, read_nist_data, save_waves
 from plottools import DataHandler, RealTimePlot
 
 
@@ -29,7 +29,6 @@ class Window(QMainWindow):
         self.setCentralWidget(PlotContainer(self.plot, self.camera))
 
         # Menu
-        self.menubar = self.menuBar()
         self.create_menu()
 
         self.toolbar = QToolBar("My main toolbar")
@@ -60,7 +59,6 @@ class Window(QMainWindow):
         self.plot.redraw()
 
     def create_menu(self):
-        self.menubar.hide()
         menu_widget = QWidget()
         menu_widget.setObjectName("menubar")
         menu_container = QHBoxLayout()
@@ -376,7 +374,7 @@ class MapInput(QWidget):
 
         layout.addWidget(FixedSizeSpacer(width=20))
 
-        self.wl_input = LabeledLineEdit("Wavelength:")
+        self.wl_input = LabeledLineEdit("Wavelength:", max_text_width=90)
         layout.addWidget(self.wl_input)
 
         if removable:
@@ -396,12 +394,12 @@ class MapInput(QWidget):
         return self.wl_input.get_float()
 
 
-class MaxPixelsDialog(QDialog):
+class MaxPixelsDialog(Dialog):
     def __init__(self, parent: Window, graph_type: int = RealTimePlot.PRIMARY):
-        super().__init__(parent)
+        super().__init__(parent, "Map pixels to wavelengths")
+
         self.graph_type = graph_type
         self.parent = parent
-        self.setWindowTitle("Map pixels to wavelengths")
 
         layout = QVBoxLayout()
 
@@ -419,17 +417,26 @@ class MaxPixelsDialog(QDialog):
             container_layout.addWidget(MapInput(removable=True))
 
         add_map_button = SimpleButton("Add map item", add_map_item)
+        load_map_button = SimpleButton("Load map", add_map_item)
+        save_map_button = SimpleButton("Save map", add_map_item)
+
+        load_save_container = QHBoxLayout()
+        load_save_container.addWidget(load_map_button)
+        load_save_container.addWidget(save_map_button)
+        load_save_container.addStretch()
+
         button_container = QHBoxLayout()
-        button_container.addStretch()
         button_container.addWidget(add_map_button)
+        button_container.addStretch()
         layout.addStretch()
         layout.addLayout(button_container)
+        layout.addLayout(load_save_container)
         layout.addStretch()
 
-        map_button = SimpleButton("Map", self.map)
+        map_button = SimpleButton("Calculate map", self.map)
         map_button_container = QHBoxLayout()
-        map_button_container.addStretch()
         map_button_container.addWidget(map_button)
+        map_button_container.addStretch()
         layout.addLayout(map_button_container)
 
         close_button = SimpleButton("Close", self.close)
@@ -443,7 +450,8 @@ class MaxPixelsDialog(QDialog):
         for i in range(2):
             container_layout.addWidget(MapInput(removable=False))
 
-        self.setLayout(layout)
+        self.set_main_layout(layout)
+
 
     def show(self):
         super().show()
@@ -461,39 +469,38 @@ class MaxPixelsDialog(QDialog):
         except Exception as e:
             print(e)
 
-class SaveFileDialog(QDialog):
+class SaveFileDialog(Dialog):
     # noinspection PyUnresolvedReferences
     def __init__(self, parent: Window, ask_for_delimiter=True, title="Save spectrum", dialog_filter="All Files (*.*)"):
-        super().__init__(parent)
+        super().__init__(parent, title)
         self.parent = parent
-        self.setWindowTitle(title)
 
-        container = QVBoxLayout()
+        layout = QVBoxLayout()
 
         if ask_for_delimiter:
             self.delimiter_input = LabeledLineEdit("Delimiter:", max_text_width=25, text=",")
-            container.addWidget(self.delimiter_input)
+            layout.addWidget(self.delimiter_input)
         else:
             self.delimiter_input = None
 
 
         label = QLabel("Column 0: Pixel value\nColumn 1: Calibrated wavelength value\nColumn 2: Intensity")
-        container.addWidget(label)
+        layout.addWidget(label)
 
         self.file_input = FileInput(dialog_filter=dialog_filter, is_save_file=True)
 
-        container.addWidget(self.file_input)
+        layout.addWidget(self.file_input)
 
         save_button = SimpleButton("Save", self.on_close)
 
         bottom_hbox = QHBoxLayout()
         bottom_hbox.addStretch()
         bottom_hbox.addWidget(save_button)
-        container.addStretch()
-        container.addLayout(bottom_hbox)
+        layout.addStretch()
+        layout.addLayout(bottom_hbox)
 
-        container.setContentsMargins(10, 10, 10, 10)
-        self.setLayout(container)
+        layout.setContentsMargins(10, 10, 10, 10)
+        self.set_main_layout(layout)
 
     def open(self):
         super().open()
@@ -513,40 +520,36 @@ class SaveFileDialog(QDialog):
 
         finally:
             self.close()
-class LoadSpectrumDialog(QDialog):
+class LoadSpectrumDialog(Dialog):
     def __init__(self, parent: Window, graph_selector):
-        super().__init__(parent)
+        super().__init__(parent, "Load primary spectrum" if graph_selector == RealTimePlot.PRIMARY else "Load reference spectrum")
         self.parent = parent
         self.graph_selector = graph_selector
         self.setObjectName("load-spectrum-dialog")
-        if graph_selector == RealTimePlot.PRIMARY:
-            self.setWindowTitle("Load primary spectrum")
-        else:
-            self.setWindowTitle("Load reference spectrum")
 
-        vbox = QVBoxLayout()
+        layout = QVBoxLayout()
 
         self.delimiter_input = LabeledLineEdit("Delimiter:", max_text_width=25, text=",")
-        vbox.addWidget(self.delimiter_input)
+        layout.addWidget(self.delimiter_input)
         self.row_start_input = LabeledLineEdit("Start at row:", max_text_width=35, text="22")
-        vbox.addWidget(self.row_start_input)
+        layout.addWidget(self.row_start_input)
         self.wavelength_column_input = LabeledLineEdit("Wavelength column:", max_text_width=35, text="0")
-        vbox.addWidget(self.wavelength_column_input)
+        layout.addWidget(self.wavelength_column_input)
         self.intensity_column_input = LabeledLineEdit("Intensity column:", max_text_width=35, text="2")
-        vbox.addWidget(self.intensity_column_input)
+        layout.addWidget(self.intensity_column_input)
         self.file_input = FileInput()
-        vbox.addWidget(self.file_input)
+        layout.addWidget(self.file_input)
 
         load_button = SimpleButton("Load", self.on_close)
 
         bottom_hbox = QHBoxLayout()
         bottom_hbox.addStretch()
         bottom_hbox.addWidget(load_button)
-        vbox.addStretch()
-        vbox.addLayout(bottom_hbox)
+        layout.addStretch()
+        layout.addLayout(bottom_hbox)
 
-        vbox.setContentsMargins(10, 10, 10, 10)
-        self.setLayout(vbox)
+        layout.setContentsMargins(10, 10, 10, 10)
+        self.set_main_layout(layout)
 
     def open(self):
         super().open()
@@ -567,43 +570,42 @@ class LoadSpectrumDialog(QDialog):
             return
 
 
-class DownloadFromNISTDialog(QDialog):
+class DownloadFromNISTDialog(Dialog):
     def __init__(self, parent: Window):
-        super().__init__(parent)
+        super().__init__(parent, "Download from NIST")
         self.parent = parent
         self.setObjectName("load-spectrum-dialog")
-        self.setWindowTitle("Load spectrum")
 
-        vbox = QVBoxLayout()
+        layout = QVBoxLayout()
 
         self.element_input = LabeledLineEdit("Element:", max_text_width=30)
-        vbox.addWidget(self.element_input)
+        layout.addWidget(self.element_input)
 
         self.start_wl_input = LabeledLineEdit("Start wavelength:", max_text_width=35)
-        vbox.addWidget(self.start_wl_input)
+        layout.addWidget(self.start_wl_input)
 
         self.end_wl_input = LabeledLineEdit("End wavelength:", max_text_width=35)
-        vbox.addWidget(self.end_wl_input)
+        layout.addWidget(self.end_wl_input)
 
         self.fwhm_input = LabeledLineEdit("Full width half max:", max_text_width=35)
-        vbox.addWidget(self.fwhm_input)
+        layout.addWidget(self.fwhm_input)
 
         self.intensity_fraction_input = LabeledLineEdit("Intensity fraction:", max_text_width=35)
-        vbox.addWidget(self.intensity_fraction_input)
+        layout.addWidget(self.intensity_fraction_input)
 
         self.file_input = FileInput(label_text="Save to:", is_save_file=True, dialog_filter="TXT File (*.txt)")
-        vbox.addWidget(self.file_input)
+        layout.addWidget(self.file_input)
 
         load_button = SimpleButton("Load", self.on_close)
 
         bottom_hbox = QHBoxLayout()
         bottom_hbox.addStretch()
         bottom_hbox.addWidget(load_button)
-        vbox.addStretch()
-        vbox.addLayout(bottom_hbox)
+        layout.addStretch()
+        layout.addLayout(bottom_hbox)
 
-        vbox.setContentsMargins(10, 10, 10, 10)
-        self.setLayout(vbox)
+        layout.setContentsMargins(10, 10, 10, 10)
+        self.set_main_layout(layout)
 
     def open(self):
         super().open()
@@ -618,52 +620,53 @@ class DownloadFromNISTDialog(QDialog):
             intensity_fraction = self.intensity_fraction_input.get_float()
             fpath = self.file_input.get_chosen_fname()
 
-            fetch_waves(end_wavelength, start_wavelength, element, fpath)
+            fetch_nist_data(end_wavelength, start_wavelength, element, fpath)
             wavelengths, intensities = read_nist_data(fpath, start_wavelength, end_wavelength, intensity_fraction, full_width_half_max)
             self.parent.load_spectrum(wavelengths, intensities, RealTimePlot.REFERENCE)
 
             self.close()
         except ValueError:
             return
+        except TimeoutError:
+            ErrorDialog("The connection timed out.  Check your internet connection.")
         except AttributeError as e:
             print(e)
             ErrorDialog("NIST could not generate a spectrum based on your inputs")
 
 
-class OpenFromNISTDialog(QDialog):
+class OpenFromNISTDialog(Dialog):
     def __init__(self, parent: Window):
-        super().__init__(parent)
+        super().__init__(parent, "Open from NIST")
         self.parent = parent
         self.setObjectName("load-spectrum-dialog")
-        self.setWindowTitle("Load spectrum")
 
-        vbox = QVBoxLayout()
+        layout = QVBoxLayout()
 
         self.start_wl_input = LabeledLineEdit("Start wavelength:", max_text_width=35, text="400")
-        vbox.addWidget(self.start_wl_input)
+        layout.addWidget(self.start_wl_input)
 
         self.end_wl_input = LabeledLineEdit("End wavelength:", max_text_width=35, text="700")
-        vbox.addWidget(self.end_wl_input)
+        layout.addWidget(self.end_wl_input)
 
         self.fwhm_input = LabeledLineEdit("Full width half max:", max_text_width=35, text="1")
-        vbox.addWidget(self.fwhm_input)
+        layout.addWidget(self.fwhm_input)
 
         self.intensity_fraction_input = LabeledLineEdit("Intensity fraction:", max_text_width=35, text="0.3")
-        vbox.addWidget(self.intensity_fraction_input)
+        layout.addWidget(self.intensity_fraction_input)
 
         self.file_input = FileInput(label_text="File:", dialog_filter="TXT File (*.txt)")
-        vbox.addWidget(self.file_input)
+        layout.addWidget(self.file_input)
 
         load_button = SimpleButton("Load", self.on_close)
 
         bottom_hbox = QHBoxLayout()
         bottom_hbox.addStretch()
         bottom_hbox.addWidget(load_button)
-        vbox.addStretch()
-        vbox.addLayout(bottom_hbox)
+        layout.addStretch()
+        layout.addLayout(bottom_hbox)
 
-        vbox.setContentsMargins(10, 10, 10, 10)
-        self.setLayout(vbox)
+        layout.setContentsMargins(10, 10, 10, 10)
+        self.set_main_layout(layout)
 
     def open(self):
         super().open()

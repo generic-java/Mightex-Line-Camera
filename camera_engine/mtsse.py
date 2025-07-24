@@ -82,7 +82,7 @@ class LineCamera:
         if activate:
             self.activate()
 
-    def add_frame_callback(self, callback):
+    def set_frame_callback(self, callback):
         self._frame_callback = callback
 
     def activate(self):

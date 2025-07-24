@@ -232,8 +232,7 @@ class Graph:
     PIXEL = 0
     WAVELENGTH = 1
 
-    def __init__(self, unit_type: int, blit_manager: BlitManager, axes: Axes, raw_data, line: Line2D,
-                 crosshair: Crosshair, fitting_params):
+    def __init__(self, unit_type: int, blit_manager: BlitManager, axes: Axes, raw_data, line: Line2D, crosshair: Crosshair, fitting_params):
         self._unit_type = unit_type
         self._blit_manager = blit_manager
         self._axes = axes
@@ -245,6 +244,7 @@ class Graph:
 
     def set_unit_type(self, unit_type: int):
         self._unit_type = unit_type
+        self.update_x_bounds()
 
     def get_unit_type(self):
         return self._unit_type
@@ -290,14 +290,22 @@ class Graph:
     def get_y_bounds(self):
         return self._axes.get_ylim()
 
-    def update_x_bounds(self):
+    def update_x_bounds(self, refresh=True):
+        if len(self._raw_data[0]) == 0:
+            return
         if self._unit_type == Graph.WAVELENGTH:
-            self._axes.set_xlim(cubic(0, *self._fitting_params),
-                                cubic(np.max(self._raw_data[0]), *self._fitting_params))
+            self._axes.set_xlim(cubic(np.min(self._raw_data[0]), *self._fitting_params), cubic(np.max(self._raw_data[0]), *self._fitting_params))
             self._line.set_xdata(cubic(self._raw_data[0], *self._fitting_params))
         elif self._unit_type == Graph.PIXEL:
             self._axes.set_xlim(0, PIXELS)
             self._line.set_xdata(self._raw_data[0])
+        if refresh:
+            self.refresh()
+
+    def refresh(self):
+        self._crosshair.refresh()
+        self._blit_manager.force_refresh()
+        self._blit_manager.update()
 
     def get_artists(self):
         return self._line, *self._crosshair.get_artists()
@@ -412,7 +420,7 @@ class RealTimePlot(QWidget):
         self.primary_unit_control = WavelengthPixelButton(self.primary_graph)
 
         # Reference unit control
-        self.reference_unit_control = WavelengthPixelButton(self.reference_graph)
+        self.reference_unit_control = WavelengthPixelButton(self.reference_graph, self.refresh_reference_x_bounds_control)
 
         # Primary y limits
         self.primary_y_min = LabeledLineEdit("Min y:", on_edit=self.relim_primary_y, max_text_width=75)
@@ -577,7 +585,7 @@ class RealTimePlot(QWidget):
             fitting_params, _ = curve_fit(cubic, pixels, wavelengths)
             graph.set_fitting_params(fitting_params)
 
-        graph.update_x_bounds()
+        graph.update_x_bounds(refresh=False)
         if graph_selector == RealTimePlot.PRIMARY:
             self.primary_unit_control.check_wavelength()
             x_min, x_max = graph.get_x_bounds()
@@ -677,17 +685,17 @@ def cubic(x, a0, a1, a2, a3):
 
 
 class WavelengthPixelButton(QWidget):
-    def __init__(self, graph: Graph):
+    def __init__(self, graph: Graph, on_toggle=None):
         super().__init__()
         layout = QHBoxLayout()
         self._pixel = ArrowImmuneRadioButton("Pixel", self)
         self._pixel.setChecked(True)
 
         def toggle():
-            if self._pixel.isChecked():
-                graph.set_unit_type(Graph.PIXEL)
-            else:
-                graph.set_unit_type(Graph.WAVELENGTH)
+            unit_type = Graph.PIXEL if self._pixel.isChecked() else Graph.WAVELENGTH
+            graph.set_unit_type(unit_type)
+            if on_toggle:
+                on_toggle(unit_type)
 
         self._pixel.toggled.connect(toggle)
         self._wavelength = ArrowImmuneRadioButton("Wavelength", self)
