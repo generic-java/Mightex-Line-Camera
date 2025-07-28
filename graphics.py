@@ -9,7 +9,6 @@ from bisect import bisect_left
 
 import numpy as np
 
-_MAX_RANGE = 200
 
 def shape_lines(data_x, stick_wavelengths, stick_intensities, intensity_fraction, full_width_half_max):
     """
@@ -27,15 +26,16 @@ def shape_lines(data_x, stick_wavelengths, stick_intensities, intensity_fraction
         y.append(intensity_at_point(x, stick_wavelengths, stick_intensities, intensity_fraction, full_width_half_max))
 
     return np.array(y) / np.max(y)
-    
+
 
 def intensity_at_point(x, wavelengths, intensities, intensity_fraction, full_width_half_max):
-    wavelength_max = x + _MAX_RANGE * full_width_half_max
-    wavelength_min = x - _MAX_RANGE * full_width_half_max
-    
+    wavelength_range = 2.3584 + 10 * (1 - intensity_fraction)
+    wavelength_max = x + wavelength_range * full_width_half_max
+    wavelength_min = x - wavelength_range * full_width_half_max
+
     # Finds the starting point in the determined range
     start_index = bisect_left(wavelengths, wavelength_min)
-    
+
     # Finds the ending point in the determined range
     end_index = bisect_left(wavelengths, wavelength_max)
 
@@ -43,7 +43,7 @@ def intensity_at_point(x, wavelengths, intensities, intensity_fraction, full_wid
     intensities = intensities[range(int(start_index), int(end_index))]
 
     partial_intensities = intensities * pseudo_voigt(x, wavelengths, intensity_fraction, full_width_half_max)
-    
+
     return np.sum(partial_intensities)
 
             

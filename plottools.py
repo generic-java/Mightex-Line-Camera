@@ -1,5 +1,3 @@
-import re
-
 import matplotlib
 import numpy as np
 from PyQt6.QtCore import QObject, pyqtSignal, QTimer
@@ -14,6 +12,7 @@ from scipy.optimize import curve_fit
 
 from app_widgets import ArrowImmuneRadioButton, LabeledLineEdit
 from camera_engine.mtsse import Frame, LineCamera, PIXELS
+from utils import format_number
 
 
 class BlitManager:
@@ -141,14 +140,8 @@ class DataHandler(QObject):
 
 
 class CrosshairReadout(QLabel):
-    round_x = False
-    round_y = False
-
-    def __init__(self):
-        super().__init__()
-
     def set_text(self, x, y):
-        self.setText(f"x: {x:.3f}\ny: {y:.3f}")
+        self.setText(f"Crosshair x: {format_number(x)}\nCrosshair y: {format_number(y)}")
 
 
 class Crosshair:
@@ -183,11 +176,11 @@ class Crosshair:
         self.set_position_index(self.index + increment)
 
     def set_position_index(self, index: int):
-        index = int(index)
         line_x, line_y = self.line.get_data()
         if len(line_x) == 0:
             return
-        self.index = clamp(0, len(line_x), index)
+        index = int(clamp(0, len(line_x) - 1, index))
+        self.index = index
 
         x_min, x_max = self.axes.get_xlim()
         y_min, y_max = self.axes.get_ylim()
@@ -263,8 +256,15 @@ class Graph:
         else:
             self._calibrated_data = self._raw_data
             self._line.set_data(x, y)
-        self._crosshair.reset()
-        self._blit_manager.update()
+
+        x_min, x_max = self.get_x_bounds()
+        display_x, display_y = self._line.get_data()
+        tol = 1e-3
+        if abs(np.min(display_x) - x_min) > tol or abs(np.max(display_x) - x_max) > tol: # If the x bounds of the new dataset are different
+            self.update_x_bounds()
+        else:
+            self._crosshair.reset()
+            self._blit_manager.update()
 
     def get_calibrated_data(self):
         return self._calibrated_data
@@ -297,7 +297,7 @@ class Graph:
             self._axes.set_xlim(cubic(np.min(self._raw_data[0]), *self._fitting_params), cubic(np.max(self._raw_data[0]), *self._fitting_params))
             self._line.set_xdata(cubic(self._raw_data[0], *self._fitting_params))
         elif self._unit_type == Graph.PIXEL:
-            self._axes.set_xlim(0, PIXELS)
+            self._axes.set_xlim(np.min(self._raw_data[0]), np.max(self._raw_data[0]))
             self._line.set_xdata(self._raw_data[0])
         if refresh:
             self.refresh()
@@ -411,10 +411,17 @@ class RealTimePlot(QWidget):
         self.canvas.mpl_connect("button_press_event", self.onclick)
 
         # Primary unit control
-        self.primary_unit_control = WavelengthPixelButton(self.primary_graph)
+        self.primary_unit_control = WavelengthPixelButton(self.primary_graph, lambda _: self.refresh_primary_x_bounds_readout())
 
         # Reference unit control
-        self.reference_unit_control = WavelengthPixelButton(self.reference_graph, lambda _: self.refresh_reference_x_bounds_control)
+        self.reference_unit_control = WavelengthPixelButton(self.reference_graph, lambda _: self.refresh_reference_x_bounds_control())
+
+        # Primary x limits
+        self.primary_x_min = LabeledLineEdit("Min x:", max_text_width=75)
+        self.primary_x_min.disable_editing()
+        self.primary_x_max = LabeledLineEdit("Max x:", max_text_width=75)
+        self.primary_x_max.disable_editing()
+        self.refresh_primary_x_bounds_readout()
 
         # Primary y limits
         self.primary_y_min = LabeledLineEdit("Min y:", on_edit=self.relim_primary_y, max_text_width=75)
@@ -540,19 +547,10 @@ class RealTimePlot(QWidget):
         self._refresh_graph(RealTimePlot.REFERENCE)
 
     def define_axes_bounds(self, line_edit_min: LabeledLineEdit, line_edit_max: LabeledLineEdit, set_lim, refresh_plot):
-        pattern = r"-?[0-9]+\.?[0-9]*"
-        min_text = line_edit_min.get_text()
-        min_val = re.search(pattern, min_text)
-        if min_text and min_val and min_val.group(0) == min_text:
-            min_val = float(min_val.group(0))
-        else:
-            return
-
-        max_text = line_edit_max.get_text()
-        max_val = re.match(pattern, max_text)
-        if max_text and max_val and max_val.group(0) == max_text:
-            max_val = float(max_val.group(0))
-        else:
+        try:
+            min_val = float(line_edit_min.get_text())
+            max_val = float(line_edit_max.get_text())
+        except ValueError:
             return
 
         if min_val < max_val:
@@ -596,15 +594,20 @@ class RealTimePlot(QWidget):
         graph.set_fitting_params(fitting_params)
         self._after_fit(graph, graph_selector)
 
+    def constrain_reference_x(self):
+        x_min, x_max = self.primary_graph.get_x_bounds()
+        self.reference_graph.get_axes().set_xlim(x_min, x_max)
+        self.refresh_reference_x_bounds_control()
+        self.reference_graph.refresh()
 
     def _after_fit(self, graph, graph_selector):
         graph.update_x_bounds(refresh=False)
         if graph_selector == RealTimePlot.PRIMARY:
+            self.refresh_primary_x_bounds_readout()
             self.primary_unit_control.check_wavelength()
-            x_min, x_max = graph.get_x_bounds()
-            self.reference_graph.get_axes().set_xlim(x_min, x_max)
-            self.refresh_reference_x_bounds_control()
+            self.constrain_reference_x()
         else:
+            self.refresh_reference_x_bounds_control()
             self.reference_unit_control.check_wavelength()
 
 
@@ -634,6 +637,12 @@ class RealTimePlot(QWidget):
     def get_selection_control(self):
         return self.selection_control
 
+    def get_primary_x_min_readout(self):
+        return self.primary_x_min
+
+    def get_primary_x_max_readout(self):
+        return self.primary_x_max
+
     def get_primary_y_min_control(self):
         return self.primary_y_min
 
@@ -651,6 +660,11 @@ class RealTimePlot(QWidget):
 
     def get_reference_y_max_control(self):
         return self.reference_y_max
+
+    def refresh_primary_x_bounds_readout(self):
+        x_min, x_max = self.primary_graph.get_x_bounds()
+        self.primary_x_min.set_text(f"{x_min:.2f}")
+        self.primary_x_max.set_text(f"{x_max:.2f}")
 
     def refresh_primary_y_bounds_control(self):
         y_min, y_max = self.primary_graph.get_y_bounds()

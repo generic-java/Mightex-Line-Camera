@@ -6,6 +6,8 @@ from PyQt6.QtWidgets import QWidget, QHBoxLayout, QLabel, QLineEdit, QFileDialog
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 
+from utils import format_number
+
 
 class FileInput(QWidget):
     _chosen_fname = None
@@ -102,14 +104,7 @@ class CopyableCoefficient(QWidget):
 
     def set_value(self, value: float):
         self.value = value
-        if abs(round(value) - float(value)) < 1e-10:
-            if round(value) == 0:
-                formatted_value = "0"
-            else:
-                formatted_value = f"{value:.0f}"
-        else:
-            formatted_value = f"{value:.10f}"
-        self.math_text.set_text(f"${self.coeff_name} = {formatted_value}$")
+        self.math_text.set_text(f"${self.coeff_name} = {format_number(value, decimal_places=12)}$")
 
 
 class LabeledLineEdit(QWidget):
@@ -129,6 +124,9 @@ class LabeledLineEdit(QWidget):
         layout.addWidget(self._line_edit)
         self._line_edit.setFixedWidth(max_text_width)
         self.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Maximum)
+
+    def disable_editing(self):
+        self._line_edit.setReadOnly(True)
 
     def set_text(self, text: str):
         self._line_edit.setText(text)
@@ -179,6 +177,9 @@ class IconButton(QPushButton):
         self.clicked.connect(callback)
 
 class ArrowImmuneRadioButton(QRadioButton):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, *kwargs)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
     def keyPressEvent(self, event):
         if event.key() in (Qt.Key.Key_Left, Qt.Key.Key_Right, Qt.Key.Key_Up, Qt.Key.Key_Down):
             event.ignore()
@@ -302,6 +303,7 @@ class ClearFocusFilter(QObject):
                 if widget_under_mouse is None or widget_under_mouse != focused:
                     focused.clearFocus()
         return super().eventFilter(obj, event)
+
 
 
 class WindowHandleButton(QPushButton):

@@ -13,6 +13,7 @@ from camera_engine.mtsse import LineCamera
 from camera_engine.wrapper import PIXELS
 from loadwaves import load_waves, fetch_nist_data, read_nist_data, save_waves
 from plottools import DataHandler, RealTimePlot
+from utils import format_number
 
 
 class Window(QMainWindow):
@@ -26,6 +27,11 @@ class Window(QMainWindow):
         # All things plotting
         self.plot = RealTimePlot(DataHandler(camera))
         self.setCentralWidget(PlotContainer(self.plot, self.camera))
+
+        # Create shared dialogs
+        self.save_dialog = SaveFileDialog(self)
+        self.csv_save_dialog = SaveFileDialog(self, ask_for_delimiter=False, dialog_filter="CSV Files (*.csv)")
+        self.txt_save_dialog = SaveFileDialog(self, dialog_filter="Text Documents (*.txt)")
 
         # Menu
         self.create_menu()
@@ -74,8 +80,11 @@ class Window(QMainWindow):
         # Save as submenu
         save_as = file_menu.add_menu("Save as")
         save_as_csv = QAction("CSV", self)
+        save_as_csv.triggered.connect(self.csv_save_dialog.open)
         save_as_txt = QAction("TXT", self)
-        save_as_other = QAction("other", self)
+        save_as_txt.triggered.connect(self.txt_save_dialog.open)
+        save_as_other = QAction("Other", self)
+        save_as_other.triggered.connect(self.save_dialog.open)
         save_as.addAction(save_as_csv)
         save_as.addAction(save_as_txt)
         save_as.addAction(save_as_other)
@@ -209,14 +218,9 @@ class Window(QMainWindow):
 
         self.toolbar.addWidget(FixedSizeSpacer(width=10))
 
-        save_dialog = SaveFileDialog(self)
-        self.toolbar.addAction(ToolbarButton(QIcon("./res/icons/save.png"), "Save spectrum", self, callback=save_dialog.open))
-
-        csv_save_dialog = SaveFileDialog(self, ask_for_delimiter=False, dialog_filter="CSV Files (*.csv)")
-        self.toolbar.addAction(ToolbarButton(QIcon("./res/icons/notepad.png"), "Save as CSV", self, callback=csv_save_dialog.open))
-
-        txt_save_dialog = SaveFileDialog(self, dialog_filter="Text Documents (*.txt)")
-        self.toolbar.addAction(ToolbarButton(QIcon("./res/icons/txtpad.png"), "Save as TXT", self, callback=txt_save_dialog.open))
+        self.toolbar.addAction(ToolbarButton(QIcon("./res/icons/save.png"), "Save spectrum", self, callback=self.save_dialog.open))
+        self.toolbar.addAction(ToolbarButton(QIcon("./res/icons/notepad.png"), "Save as CSV", self, callback=self.csv_save_dialog.open))
+        self.toolbar.addAction(ToolbarButton(QIcon("./res/icons/txtpad.png"), "Save as TXT", self, callback=self.txt_save_dialog.open))
 
         self.toolbar.addSeparator()
 
@@ -284,6 +288,10 @@ class PlotContainer(QWidget):
         primary_controls_box = QWidget()
         primary_controls_box.setObjectName("primary-controls-box")
         primary_controls_container = QVBoxLayout()
+        primary_label_container = QHBoxLayout()
+        primary_label_container.addWidget(QLabel("Primary graph controls"))
+        primary_label_container.addStretch()
+        primary_controls_container.addLayout(primary_label_container)
         primary_controls_box.setLayout(primary_controls_container)
 
         # Crosshair readout
@@ -292,6 +300,13 @@ class PlotContainer(QWidget):
         primary_crosshair_readout_container.addStretch()
 
         primary_controls_container.addLayout(primary_crosshair_readout_container)
+
+        # Primary x axis bounds
+        primary_x_bounds_container = QHBoxLayout()
+        primary_x_bounds_container.addWidget(self.plot.get_primary_x_min_readout())
+        primary_x_bounds_container.addWidget(self.plot.get_primary_x_max_readout())
+        primary_x_bounds_container.addStretch()
+        primary_controls_container.addLayout(primary_x_bounds_container)
 
         # Primary y axis bounds
         primary_y_bounds_container = QHBoxLayout()
@@ -315,6 +330,10 @@ class PlotContainer(QWidget):
         reference_controls_box = QWidget()
         reference_controls_box.setObjectName("reference-controls-box")
         reference_controls_container = QVBoxLayout()
+        reference_label_container = QHBoxLayout()
+        reference_label_container.addWidget(QLabel("Reference graph controls"))
+        reference_label_container.addStretch()
+        reference_controls_container.addLayout(reference_label_container)
         reference_controls_box.setLayout(reference_controls_container)
 
         # Crosshair readout
@@ -337,6 +356,10 @@ class PlotContainer(QWidget):
         reference_y_bounds_container.addWidget(self.plot.get_reference_y_max_control())
         reference_y_bounds_container.addStretch()
         reference_controls_container.addLayout(reference_y_bounds_container)
+
+        reference_controls_container.addWidget(FixedSizeSpacer(height=5))
+        constrain_reference_x_button = SimpleButton("Align x", plot.constrain_reference_x)
+        reference_controls_container.addWidget(constrain_reference_x_button)
 
         # Unit control
         reference_unit_control_container = QHBoxLayout()
@@ -365,6 +388,7 @@ class PlotContainer(QWidget):
         master_controls_container.addStretch()
         plot_container_layout.addLayout(master_controls_container)
         plot_container_layout.addWidget(self.plot.get_selection_control())
+        plot_container_layout.addWidget(self.plot.get_selection_control())
 
         self.setLayout(plot_container_layout)
 
@@ -372,6 +396,8 @@ class PlotContainer(QWidget):
 class MapInput(QWidget):
     def __init__(self, parent_layout: QLayout, removable=True):
         super().__init__()
+        self.parent_layout = parent_layout
+        self.removable = removable
         layout = QHBoxLayout()
         self.pixel_input = LabeledLineEdit("Pixel:")
         layout.addWidget(self.pixel_input)
@@ -384,11 +410,7 @@ class MapInput(QWidget):
         if removable:
             layout.addWidget(FixedSizeSpacer(width=20))
 
-            def remove():
-                self.hide()
-                parent_layout.removeWidget(self)
-
-            delete_button = IconButton(QIcon("./res/icons/trash.png"), remove)
+            delete_button = IconButton(QIcon("./res/icons/trash.png"), self.clear)
             delete_button.setFixedSize(QSize(20, 20))
             layout.addWidget(delete_button)
 
@@ -400,6 +422,14 @@ class MapInput(QWidget):
 
     def get_wavelength(self):
         return self.wl_input.get_float()
+
+    def clear(self):
+        if self.removable:
+            self.hide()
+            self.parent_layout.removeWidget(self)
+        else:
+            self.pixel_input.set_text("")
+            self.wl_input.set_text("")
 
 
 # noinspection PyShadowingNames
@@ -422,11 +452,6 @@ class MaxPixelsDialog(Dialog):
         map_container.setWidget(self.container_widget)
         layout.addWidget(map_container)
 
-        def add_map_item():
-            map_container_layout.addWidget(MapInput(map_container_layout, removable=True))
-
-        add_map_button = SimpleButton("Add map item", add_map_item)
-
         def load_map():
             fname, _ = QFileDialog.getOpenFileName(filter="CSV Files (*.csv)")
             if not fname:
@@ -434,7 +459,9 @@ class MaxPixelsDialog(Dialog):
             try:
                 pixels, wavelengths = load_waves(fname)
                 map_widgets = self.get_map_inputs()
-                for i in range(len(pixels)):
+
+                i = 0
+                while i < len(pixels):
                     if i < len(map_widgets):
                         map_widget = map_widgets[i]
                     else:
@@ -443,11 +470,15 @@ class MaxPixelsDialog(Dialog):
 
                     map_widget.pixel_input.set_text(f"{pixels[i]:.0f}")
                     map_widget.wl_input.set_text(str(wavelengths[i]))
+                    i += 1
+                while i < len(map_widgets): # If there are still map widgets beyond amount needed to load the map, delete them
+                    map_widgets[i].clear()
+                    i += 1
 
             except IOError:
                 ErrorDialog("Could not read the file.  Check that it exists and is in the correct format.", width=400)
                 return
-            except RuntimeError as e:
+            except Exception as e:
                 ErrorDialog(e, width=400)
                 return
 
@@ -467,9 +498,10 @@ class MaxPixelsDialog(Dialog):
             except IOError:
                 ErrorDialog("Could not save file.  Check that it is not already open in another program.", width=400)
                 return
+            except ValueError:
+                return
             except RuntimeError as e:
                 ErrorDialog(e, width=400)
-                return
 
         load_map_button = SimpleButton("Load map", load_map)
         save_map_button = SimpleButton("Save map", save_map)
@@ -479,8 +511,19 @@ class MaxPixelsDialog(Dialog):
         load_save_container.addWidget(save_map_button)
         load_save_container.addStretch()
 
+        def add_map_item():
+            map_container_layout.addWidget(MapInput(map_container_layout, removable=True))
+
+        def clear_map():
+            for map_widget in self.get_map_inputs():
+                map_widget.clear()
+
+        add_map_button = SimpleButton("Add map item", add_map_item)
+        clear_map_button = SimpleButton("Clear", clear_map)
+
         button_container = QHBoxLayout()
         button_container.addWidget(add_map_button)
+        button_container.addWidget(clear_map_button)
         button_container.addStretch()
         layout.addStretch()
         layout.addLayout(button_container)
@@ -496,7 +539,6 @@ class MaxPixelsDialog(Dialog):
         coeff_container = QVBoxLayout()
         self.coeff_widgets = [CopyableCoefficient(f"a_{i}", 0, TeXWidget(width=250, height=40)) for i in range(4)]
         [coeff_container.addWidget(coeff_label) for coeff_label in self.coeff_widgets]
-        self.display_coefficients()
         coeff_container_outer.addLayout(coeff_container)
         coeff_container_outer.addStretch()
 
@@ -526,13 +568,14 @@ class MaxPixelsDialog(Dialog):
     def show(self):
         super().show()
         self.setFixedSize(self.size())
+        self.display_coefficients()
 
     def display_coefficients(self):
         coefficients = self.parent.plot.get_primary_graph().get_fitting_params()
         for i in range(len(coefficients)):
             self.coeff_widgets[i].set_value(coefficients[i])
 
-    def get_map_inputs(self):
+    def get_map_inputs(self) -> list:
         map_inputs = []
         for map_input in self.container_widget.findChildren(MapInput):
             if not map_input.isHidden():
@@ -591,11 +634,7 @@ class EnterCoeffDialog(Dialog):
         current_coefficients = self.parent.plot.get_graph(self.graph_type).get_fitting_params()
         for i in range(len(self.entries)):
             value = current_coefficients[i]
-            if abs(round(value) - float(value)) < 1e-5:
-                formatted_value = f"{value:.0f}"
-            else:
-                formatted_value = f"{value:.10f}"
-            self.entries[i].setText(formatted_value)
+            self.entries[i].setText(format_number(value, decimal_places=12))
 
     def calculate_fit(self):
         try:
@@ -609,6 +648,7 @@ class EnterCoeffDialog(Dialog):
             ErrorDialog("Please enter valid numbers for each entry.")
         except Exception as e:
             ErrorDialog(str(e), width=400)
+
 
 class SaveFileDialog(Dialog):
     # noinspection PyUnresolvedReferences
@@ -624,7 +664,8 @@ class SaveFileDialog(Dialog):
         else:
             self.delimiter_input = None
 
-        label = QLabel("\nColumn 0: Pixel value\n\nColumn 1: Calibrated wavelength value\n\nColumn 2: Intensity\n")
+        prefix = "\n" if ask_for_delimiter else ""
+        label = QLabel(prefix + "Column 0: Pixel value\n\nColumn 1: Calibrated wavelength value\n\nColumn 2: Intensity\n")
         layout.addWidget(label)
 
         self.file_input = FileInput(dialog_filter=dialog_filter, is_save_file=True)

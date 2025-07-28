@@ -10,6 +10,8 @@ from matplotlib import pyplot as plt
 
 from graphics import shape_lines
 
+_POINTS_PER_NM = 8
+
 _invalid_nist = None
 
 with open("./res/files/invalid_nist.txt") as nist_file:
@@ -54,9 +56,6 @@ def fetch_nist_data(upper, lower, element, save_path, timeout=10):
     except URLError as e:
         if isinstance(e.reason, socket.timeout):
             raise TimeoutError
-    except Exception as e:
-        print("Error:", e)
-        print(type(e))
 
 def read_nist_data(fpath, wavelength_min, wavelength_max, intensity_fraction, full_width_half_max):
     wavelengths = []
@@ -96,7 +95,7 @@ def read_nist_data(fpath, wavelength_min, wavelength_max, intensity_fraction, fu
 
     wavelengths = np.array(wavelengths)
     intensities = np.array(intensities)
-    generated_wavelengths = np.linspace(wavelength_min, wavelength_max,5000)
+    generated_wavelengths = np.linspace(wavelength_min, wavelength_max, int(_POINTS_PER_NM * (np.max(wavelengths) - np.min(wavelengths))))
     generated_intensities = shape_lines(generated_wavelengths, wavelengths, intensities, intensity_fraction, full_width_half_max)
     return generated_wavelengths, generated_intensities
 
