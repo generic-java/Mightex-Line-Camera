@@ -107,7 +107,7 @@ class CopyableCoefficient(QWidget):
         self.math_text.set_text(f"${self.coeff_name} = {format_number(value, decimal_places=12)}$")
 
 
-class LabeledLineEdit(QWidget):
+class Entry(QWidget):
     def __init__(self, label_text="", parent=None, max_text_width=50, text="", on_edit=lambda text: None):
         super().__init__(parent)
 
@@ -321,6 +321,41 @@ class WindowHandleButton(QPushButton):
     def leaveEvent(self, event=None):
         self.setIcon(self.primary_icon)
 
+class CheckBox(QPushButton):
+    _checked = False
+    def __init__(self, initially_checked: bool = False, callback = None):
+        super().__init__()
+        self.checked_icon = QIcon("./res/icons/checked.png")
+        self.unchecked_icon = QIcon("./res/icons/unchecked.png")
+        self.setFixedSize(QSize(20, 20))
+        self.setIconSize(QSize(20, 20))
+        if initially_checked:
+            self.check()
+        else:
+            self.uncheck()
+        self.clicked.connect(self.toggle)
+        self.callback = callback
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def check(self):
+        self._checked = True
+        self.setIcon(self.checked_icon)
+
+    def uncheck(self):
+        self._checked = False
+        self.setIcon(self.unchecked_icon)
+
+    def toggle(self):
+        if self._checked:
+            self.uncheck()
+        else:
+            self.check()
+        if self.callback:
+            self.callback(self._checked)
+
+    def is_checked(self):
+        return False
+
 class FullscreenToggleButton(QPushButton):
     in_fullscreen = False
 
@@ -500,3 +535,13 @@ class ErrorDialog(Dialog):
         self.set_main_widget(container)
 
         self.exec()
+
+class TitleLabel(QLabel):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setStyleSheet("""
+        QLabel {
+        font-size: 15px;
+        text-decoration: underline;
+        }
+        """)

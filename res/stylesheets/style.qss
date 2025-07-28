@@ -210,6 +210,18 @@ background-color: #343434;
 border-radius: 5px;
 }
 
+#camera-controls-box {
+border: 2px solid #6aee35;
+background-color: #343434;
+border-radius: 5px;
+}
+
+#selection-box {
+border: 2px solid #6aee35;
+background-color: #343434;
+border-radius: 5px;
+}
+
 WindowHandleButton {
 padding: 0px;
 margin: 0px;
@@ -224,4 +236,8 @@ border: none;
 
 WindowBar QLabel {
 margin: 5px;
+}
+
+CheckBox {
+background-color: transparent;
 }

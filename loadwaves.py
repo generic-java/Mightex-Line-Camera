@@ -117,20 +117,18 @@ def load_waves(fpath: str, row_start=0, x_col=0, y_col=1, delimiter: str= ","):
 
     return np.array(x), np.array(y)
 
-def save_waves(fpath, first_column, second_column, third_column=None, delimiter=","):
+def save_waves(fpath, columns: list | tuple, delimiter=","):
     with open(fpath, "w") as file:
-        if third_column:
-            data = np.column_stack((first_column, second_column, third_column))
-            text = ""
-            for row in data:
-                text += str(row[0]) + delimiter + str(row[1]) + delimiter + str(row[2]) + "\n"
-            file.write(text)
-        else:
-            data = np.column_stack((first_column, second_column))
-            text = ""
-            for row in data:
-                text += str(row[0]) + delimiter + str(row[1]) + "\n"
-            file.write(text)
+        data = np.column_stack(columns)
+        text = ""
+        for row in data:
+            for i in range(len(row)):
+                text += str(row[i])
+                if i != len(row) - 1:
+                    text += delimiter
+
+            text += "\n"
+        file.write(text)
 
 def main():
     wavelengths, intensities = read_nist_data(r"C:\Users\power\Downloads\waves.txt", 400, 700, 0.1, 2)

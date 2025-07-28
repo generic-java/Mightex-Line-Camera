@@ -10,7 +10,7 @@ from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 from scipy.optimize import curve_fit
 
-from app_widgets import ArrowImmuneRadioButton, LabeledLineEdit
+from app_widgets import ArrowImmuneRadioButton, Entry, FixedSizeSpacer
 from camera_engine.mtsse import Frame, LineCamera, PIXELS
 from utils import format_number
 
@@ -224,13 +224,16 @@ class Crosshair:
 class Graph:
     PIXEL = 0
     WAVELENGTH = 1
+    _subtract_bg = False
 
     def __init__(self, unit_type: int, blit_manager: BlitManager, axes: Axes, raw_data, line: Line2D, crosshair: Crosshair, fitting_params):
         self._unit_type = unit_type
         self._blit_manager = blit_manager
         self._axes = axes
-        self._raw_data = raw_data
-        self._calibrated_data = raw_data
+        self._raw_x, self._raw_y = raw_data
+        self._calibrated_x = self._raw_x
+        self._bg_subtracted = self._raw_y
+        self._background = np.zeros_like(self._raw_y)
         self._line = line
         self._crosshair = crosshair
         self._fitting_params = fitting_params
@@ -246,16 +249,21 @@ class Graph:
         return self._axes
 
     def get_raw_data(self):
-        return self._raw_data
+        return self._raw_x, self._raw_y
 
     def set_raw_data(self, x, y):
-        self._raw_data = (x, y)
+        self._raw_x, self._raw_y = (x, y)
+        if len(y) != len(self._background):
+            self._background = np.zeros_like(y)
+        self._bg_subtracted = y - self._background
+
+        display_y = self._bg_subtracted if self._subtract_bg else self._raw_y
         if self._unit_type == Graph.WAVELENGTH:
-            self._calibrated_data = (cubic(x, *self._fitting_params), y)
-            self._line.set_data(*self._calibrated_data)
+            self._calibrated_x = cubic(x, *self._fitting_params)
+            self._line.set_data(self._calibrated_x, display_y)
         else:
-            self._calibrated_data = self._raw_data
-            self._line.set_data(x, y)
+            self._calibrated_x = x
+            self._line.set_data(x, display_y)
 
         x_min, x_max = self.get_x_bounds()
         display_x, display_y = self._line.get_data()
@@ -267,13 +275,24 @@ class Graph:
             self._blit_manager.update()
 
     def get_calibrated_data(self):
-        return self._calibrated_data
+        return self._calibrated_x
 
     def get_data(self):
-        return self._raw_data[0], self._calibrated_data[0], self._raw_data[1]
+        return self._raw_x, self._calibrated_x, self._raw_y, self._bg_subtracted
 
     def get_line(self) -> Line2D:
         return self._line
+
+    def set_background(self, background):
+        self._background = background
+        self._bg_subtracted = self._raw_y - background
+        self._line.set_ydata(self._bg_subtracted)
+        self._blit_manager.update()
+
+    def configure_bg_subtraction(self, subtract_background: bool):
+        self._subtract_bg = subtract_background
+        self._line.set_ydata(self._bg_subtracted if self._subtract_bg else self._raw_y)
+        self._blit_manager.update()
 
     def get_crosshair(self) -> Crosshair:
         return self._crosshair
@@ -291,14 +310,14 @@ class Graph:
         return self._axes.get_ylim()
 
     def update_x_bounds(self, refresh=True):
-        if len(self._raw_data[0]) == 0:
+        if len(self._raw_x) == 0:
             return
         if self._unit_type == Graph.WAVELENGTH:
-            self._axes.set_xlim(cubic(np.min(self._raw_data[0]), *self._fitting_params), cubic(np.max(self._raw_data[0]), *self._fitting_params))
-            self._line.set_xdata(cubic(self._raw_data[0], *self._fitting_params))
+            self._axes.set_xlim(cubic(np.min(self._raw_x), *self._fitting_params), cubic(np.max(self._raw_x), *self._fitting_params))
+            self._line.set_xdata(cubic(self._raw_x, *self._fitting_params))
         elif self._unit_type == Graph.PIXEL:
-            self._axes.set_xlim(np.min(self._raw_data[0]), np.max(self._raw_data[0]))
-            self._line.set_xdata(self._raw_data[0])
+            self._axes.set_xlim(np.min(self._raw_x), np.max(self._raw_x))
+            self._line.set_xdata(self._raw_x)
         if refresh:
             self.refresh()
 
@@ -342,6 +361,8 @@ class RealTimePlot(QWidget):
 
     def __init__(self, data_handler: DataHandler, **kwargs):
         super().__init__()
+        self._subtract_background = False
+        self._background = np.zeros(PIXELS)
         matplotlib.rcParams["path.simplify"] = True
         matplotlib.rcParams["path.simplify_threshold"] = 1.0
         self.selected_graph = RealTimePlot.PRIMARY
@@ -417,25 +438,25 @@ class RealTimePlot(QWidget):
         self.reference_unit_control = WavelengthPixelButton(self.reference_graph, lambda _: self.refresh_reference_x_bounds_control())
 
         # Primary x limits
-        self.primary_x_min = LabeledLineEdit("Min x:", max_text_width=75)
+        self.primary_x_min = Entry("Min x:", max_text_width=75)
         self.primary_x_min.disable_editing()
-        self.primary_x_max = LabeledLineEdit("Max x:", max_text_width=75)
+        self.primary_x_max = Entry("Max x:", max_text_width=75)
         self.primary_x_max.disable_editing()
         self.refresh_primary_x_bounds_readout()
 
         # Primary y limits
-        self.primary_y_min = LabeledLineEdit("Min y:", on_edit=self.relim_primary_y, max_text_width=75)
-        self.primary_y_max = LabeledLineEdit("Max y:", on_edit=self.relim_primary_y, max_text_width=75)
+        self.primary_y_min = Entry("Min y:", on_edit=self.relim_primary_y, max_text_width=75)
+        self.primary_y_max = Entry("Max y:", on_edit=self.relim_primary_y, max_text_width=75)
         self.refresh_primary_y_bounds_control()
 
         # Reference x limits
-        self.reference_x_min = LabeledLineEdit("Min x:", on_edit=self.relim_reference_x, max_text_width=75)
-        self.reference_x_max = LabeledLineEdit("Max x:", on_edit=self.relim_reference_x, max_text_width=75)
+        self.reference_x_min = Entry("Min x:", on_edit=self.relim_reference_x, max_text_width=75)
+        self.reference_x_max = Entry("Max x:", on_edit=self.relim_reference_x, max_text_width=75)
         self.refresh_reference_x_bounds_control()
 
         # Reference y limits
-        self.reference_y_min = LabeledLineEdit("Min y:", on_edit=self.relim_reference_y, max_text_width=75)
-        self.reference_y_max = LabeledLineEdit("Max y:", on_edit=self.relim_reference_y, max_text_width=75)
+        self.reference_y_min = Entry("Min y:", on_edit=self.relim_reference_y, max_text_width=75)
+        self.reference_y_max = Entry("Max y:", on_edit=self.relim_reference_y, max_text_width=75)
         self.refresh_reference_y_bounds_control()
 
         # Selection control
@@ -497,6 +518,9 @@ class RealTimePlot(QWidget):
     def get_primary_data(self):
         return self.primary_graph.get_data()
 
+    def get_background_subtracted(self):
+        return self.primary_graph.get_data()[2]
+
     def get_reference_data(self):
         return self.reference_graph.get_raw_data()
 
@@ -546,7 +570,7 @@ class RealTimePlot(QWidget):
     def _refresh_reference(self):
         self._refresh_graph(RealTimePlot.REFERENCE)
 
-    def define_axes_bounds(self, line_edit_min: LabeledLineEdit, line_edit_max: LabeledLineEdit, set_lim, refresh_plot):
+    def define_axes_bounds(self, line_edit_min: Entry, line_edit_max: Entry, set_lim, refresh_plot):
         try:
             min_val = float(line_edit_min.get_text())
             max_val = float(line_edit_max.get_text())
@@ -698,6 +722,9 @@ class RealTimePlot(QWidget):
             [self._blit_manager.show_artist(index) for index in self.reference_indices]
         self._blit_manager.update()
 
+    def set_background(self, background: Frame):
+        self._background = background
+
 
 def linear(x, a0, a1):
     return a0 + a1 * x
@@ -730,8 +757,10 @@ class WavelengthPixelButton(QWidget):
         self._pixel.toggled.connect(toggle)
         self._wavelength = ArrowImmuneRadioButton("Wavelength", self)
         layout.addWidget(self._pixel)
+        layout.addWidget(FixedSizeSpacer(width=10))
         layout.addWidget(self._wavelength)
-        self.setFixedWidth(200)
+        layout.addStretch()
+        self.setFixedWidth(185)
         self.setLayout(layout)
 
     def check_wavelength(self, block_callback=True):
@@ -749,7 +778,7 @@ class PlotSelector(QWidget):
     def __init__(self, plot: RealTimePlot):
         super().__init__()
         layout = QHBoxLayout()
-        self._primary = ArrowImmuneRadioButton("Primary spectrum", self)
+        self._primary = ArrowImmuneRadioButton("Primary", self)
         self._primary.setChecked(True)
 
         def toggle():
@@ -759,16 +788,17 @@ class PlotSelector(QWidget):
                 plot.select_graph(RealTimePlot.REFERENCE)
 
         self._primary.toggled.connect(toggle)
-        self._reference = ArrowImmuneRadioButton("Reference spectrum", self)
+        self._reference = ArrowImmuneRadioButton("Reference", self)
         layout.addWidget(self._primary)
+        layout.addWidget(FixedSizeSpacer(width=10))
         layout.addWidget(self._reference)
-        self.setFixedWidth(320)
+        layout.addStretch()
+        self.setFixedWidth(192)
         self.setLayout(layout)
 
     def check_primary(self):
-        self._reference.setChecked(True)
-
-    def check_reference(self):
         self._primary.setChecked(True)
 
+    def check_reference(self):
+        self._reference.setChecked(True)
 

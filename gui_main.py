@@ -1,14 +1,11 @@
-import os
 import traceback
 
 import numpy as np
-from PyQt6.QtCore import QSize, Qt
-from PyQt6.QtGui import QAction, QIcon
 from PyQt6.QtWidgets import *
+from sympy import SympifyError
+from sympy.core.backend import sympify
 
-from app_widgets import FileInput, LabeledLineEdit, SimpleButton, ErrorDialog, IconButton, FixedSizeSpacer, \
-    PlayStopButton, ToolbarButton, ClearFocusFilter, WindowHandleButton, MenuButton, MoveWindowSpacer, \
-    FullscreenToggleButton, Dialog, TeXWidget, CopyableCoefficient
+from app_widgets import *
 from camera_engine.mtsse import LineCamera
 from camera_engine.wrapper import PIXELS
 from loadwaves import load_waves, fetch_nist_data, read_nist_data, save_waves
@@ -17,16 +14,20 @@ from utils import format_number
 
 
 class Window(QMainWindow):
+    _spectrometer_wl = 350
     def __init__(self, camera: LineCamera):
         super().__init__()
 
         self.setWindowFlag(Qt.WindowType.FramelessWindowHint)
-        self.camera = camera
         self.setWindowTitle("Mightex Manager")
+
+        # Camera control
+        self.camera = camera
 
         # All things plotting
         self.plot = RealTimePlot(DataHandler(camera))
-        self.setCentralWidget(PlotContainer(self.plot, self.camera))
+        self.coeff_calibrator = AutomaticCalibrator(self.plot)
+        self.setCentralWidget(PlotContainer(self, self.plot, self.camera)) # TODO: make this not a separate object, just a method that returns a widget
 
         # Create shared dialogs
         self.save_dialog = SaveFileDialog(self)
@@ -147,6 +148,10 @@ class Window(QMainWindow):
         enter_coeff_dialog_primary = EnterCoeffDialog(self, RealTimePlot.PRIMARY)
         calibrate_wavelength_coeff = calibrate_primary_wavelength.addAction("Enter coefficients")
         calibrate_wavelength_coeff.triggered.connect(enter_coeff_dialog_primary.open)
+
+        coeff_equation_dialog = CoeffEquationDialog(self)
+        coeff_equation = calibrate_primary_wavelength.addAction("Enter coefficient equations")
+        coeff_equation.triggered.connect(coeff_equation_dialog.open)
         # End region
 
         # Region calibrate reference spectrum
@@ -263,8 +268,12 @@ class Window(QMainWindow):
     def load_spectrum(self, wavelengths, intensities, graph_selector: int):
         self.plot.set_raw_data(wavelengths, intensities, graph_selector)
 
+
     def save_settings(self):
         pass
+
+    def get_spectrometer_wl(self):
+        return self._spectrometer_wl
 
 
 def load_stylesheet(fname: str):
@@ -272,8 +281,9 @@ def load_stylesheet(fname: str):
         return file.read()
 
 class PlotContainer(QWidget):
-    def __init__(self, plot: RealTimePlot, camera: LineCamera):
+    def __init__(self, parent: Window, plot: RealTimePlot, camera: LineCamera):
         super().__init__()
+        self.parent = parent
         self.plot = plot
         self.camera = camera
         plot_container_layout = QVBoxLayout()
@@ -284,22 +294,25 @@ class PlotContainer(QWidget):
         master_controls_container = QHBoxLayout()
 
         # Region primary plot controls
+        left_box_layout = QVBoxLayout()
+
         # Controls container
         primary_controls_box = QWidget()
         primary_controls_box.setObjectName("primary-controls-box")
         primary_controls_container = QVBoxLayout()
         primary_label_container = QHBoxLayout()
-        primary_label_container.addWidget(QLabel("Primary graph controls"))
+        primary_label_container.addWidget(TitleLabel("Primary graph controls"))
         primary_label_container.addStretch()
         primary_controls_container.addLayout(primary_label_container)
+        primary_controls_container.addStretch()
         primary_controls_box.setLayout(primary_controls_container)
 
         # Crosshair readout
         primary_crosshair_readout_container = QHBoxLayout()
         primary_crosshair_readout_container.addWidget(plot.get_primary_crosshair_readout())
         primary_crosshair_readout_container.addStretch()
-
         primary_controls_container.addLayout(primary_crosshair_readout_container)
+        primary_controls_container.addWidget(FixedSizeSpacer(height=3))
 
         # Primary x axis bounds
         primary_x_bounds_container = QHBoxLayout()
@@ -322,7 +335,23 @@ class PlotContainer(QWidget):
         primary_controls_container.addLayout(primary_unit_control_container)
         primary_unit_control_container.addStretch()
 
-        primary_controls_box.setFixedSize(QSize(300, 200))
+        primary_controls_box.setFixedSize(QSize(300, 190))
+
+        selection_box = QWidget()
+        selection_box.setObjectName("selection-box")
+        selection_container = QVBoxLayout()
+        selection_label_container = QHBoxLayout()
+        selection_label_container.addWidget(TitleLabel("Selected graph"))
+        selection_container.addLayout(selection_label_container)
+        selection_control = self.plot.get_selection_control()
+        selection_control.setFixedHeight(35)
+        selection_container.addWidget(selection_control)
+        selection_box.setLayout(selection_container)
+        selection_box.setFixedSize(QSize(300, 70))
+
+        left_box_layout.addWidget(primary_controls_box)
+        left_box_layout.addWidget(selection_box)
+
         # End region
 
         # Region reference plot controls
@@ -331,15 +360,17 @@ class PlotContainer(QWidget):
         reference_controls_box.setObjectName("reference-controls-box")
         reference_controls_container = QVBoxLayout()
         reference_label_container = QHBoxLayout()
-        reference_label_container.addWidget(QLabel("Reference graph controls"))
+        reference_label_container.addWidget(TitleLabel("Reference graph controls"))
         reference_label_container.addStretch()
         reference_controls_container.addLayout(reference_label_container)
+        reference_controls_container.addStretch()
         reference_controls_box.setLayout(reference_controls_container)
 
         # Crosshair readout
         reference_crosshair_readout_container = QHBoxLayout()
         reference_crosshair_readout_container.addWidget(plot.get_reference_crosshair_readout())
         reference_crosshair_readout_container.addStretch()
+        reference_controls_container.addWidget(FixedSizeSpacer(height=3))
 
         reference_controls_container.addLayout(reference_crosshair_readout_container)
 
@@ -368,8 +399,52 @@ class PlotContainer(QWidget):
         reference_controls_container.addLayout(reference_unit_control_container)
         reference_unit_control_container.addStretch()
 
-        reference_controls_box.setFixedSize(QSize(300, 200))
+        reference_controls_box.setFixedSize(QSize(300, 250))
         # End region
+
+        # Region camera controls
+        # Reference controls box
+        camera_controls_box = QWidget()
+        camera_controls_box.setObjectName("camera-controls-box")
+        camera_controls_container = QVBoxLayout()
+        camera_label_container = QHBoxLayout()
+        camera_label_container.addWidget(TitleLabel("Data acquisition"))
+        camera_label_container.addStretch()
+        camera_controls_container.addLayout(camera_label_container)
+        camera_controls_container.addStretch()
+        camera_controls_box.setLayout(camera_controls_container)
+
+        # Region calibration
+        center_wl_input_container = QHBoxLayout()
+
+        def wavelength_edited(text: str):
+            try:
+                wavelength = float(text)
+                parent._spectrometer_wl = wavelength
+                parent.coeff_calibrator.calibrate(wavelength)
+            except ValueError:
+                ErrorDialog("Please enter a valid number.")
+
+        center_wl_input = Entry("Spectrometer wavelength (nm)", on_edit=wavelength_edited)
+        center_wl_input_container.addWidget(center_wl_input)
+        center_wl_input_container.addStretch()
+        camera_controls_container.addLayout(center_wl_input_container)
+
+        automatic_calibration_container = QHBoxLayout()
+        calibration_label = QLabel("Automatic calibration")
+        automatic_calibration_container.addWidget(calibration_label)
+        automatic_calibration_container.addWidget(CheckBox(initially_checked=True))
+        automatic_calibration_container.addStretch()
+        camera_controls_container.addLayout(automatic_calibration_container)
+        # End region
+
+        background_subtraction_container = QHBoxLayout()
+        bg_label = QLabel("Subtract background")
+        background_subtraction_container.addWidget(bg_label)
+        background_subtraction_container.addWidget(CheckBox(initially_checked=True))
+        background_subtraction_container.addStretch()
+        camera_controls_container.addLayout(background_subtraction_container)
+
 
         def set_exposure(text: str):
             try:
@@ -379,16 +454,18 @@ class PlotContainer(QWidget):
 
             self.camera.set_exposure_ms(exposure)
 
-        exposure_time_edit = LabeledLineEdit("Exposure time (ms):", on_edit=set_exposure, max_text_width=75, text=f"{camera.get_exposure_ms():.0f}")
 
+        exposure_time_edit = Entry("Exposure time (ms):", on_edit=set_exposure, max_text_width=75, text=f"{camera.get_exposure_ms():.0f}")
+        camera_controls_container.addWidget(exposure_time_edit)
 
-        master_controls_container.addWidget(primary_controls_box)
+        camera_controls_box.setFixedSize(QSize(300, 250))
+        # End region
+
+        master_controls_container.addLayout(left_box_layout)
         master_controls_container.addWidget(reference_controls_box)
-        master_controls_container.addWidget(exposure_time_edit)
+        master_controls_container.addWidget(camera_controls_box)
         master_controls_container.addStretch()
         plot_container_layout.addLayout(master_controls_container)
-        plot_container_layout.addWidget(self.plot.get_selection_control())
-        plot_container_layout.addWidget(self.plot.get_selection_control())
 
         self.setLayout(plot_container_layout)
 
@@ -399,12 +476,12 @@ class MapInput(QWidget):
         self.parent_layout = parent_layout
         self.removable = removable
         layout = QHBoxLayout()
-        self.pixel_input = LabeledLineEdit("Pixel:")
+        self.pixel_input = Entry("Pixel:")
         layout.addWidget(self.pixel_input)
 
         layout.addWidget(FixedSizeSpacer(width=20))
 
-        self.wl_input = LabeledLineEdit("Wavelength:", max_text_width=90)
+        self.wl_input = Entry("Wavelength:", max_text_width=90)
         layout.addWidget(self.wl_input)
 
         if removable:
@@ -442,7 +519,7 @@ class MaxPixelsDialog(Dialog):
 
         layout = QVBoxLayout()
 
-        map_container = QScrollArea()
+        map_container = QScrollArea(self)
         map_container.setWidgetResizable(True)
         map_container.setFixedSize(QSize(400, 175))
         self.container_widget = QWidget()
@@ -493,7 +570,7 @@ class MaxPixelsDialog(Dialog):
                     pixels[i] = map_widgets[i].get_pixel()
                     wavelengths[i] = map_widgets[i].get_wavelength()
 
-                save_waves(fname, pixels, wavelengths)
+                save_waves(fname, (pixels, wavelengths))
 
             except IOError:
                 ErrorDialog("Could not save file.  Check that it is not already open in another program.", width=400)
@@ -649,6 +726,53 @@ class EnterCoeffDialog(Dialog):
         except Exception as e:
             ErrorDialog(str(e), width=400)
 
+class CoeffEquationDialog(Dialog):
+    def __init__(self, parent: Window):
+        super().__init__(parent, title="Enter equations")
+        self.parent = parent
+        layout = QVBoxLayout()
+        layout.addWidget(QLabel("Enter expressions for each calibration coefficient as a function of wavelength.\n'w' represents the spectrometer wavelength in nm."))
+
+        equation_widget = TeXWidget(text="$y = a_0 + a_1 x + a_2 x^2 + a_3 x^3$", width=250, height=40)
+        layout.addWidget(equation_widget)
+
+        self.entries = []
+        for i in range(4):
+            container = QHBoxLayout()
+            container.addWidget(TeXWidget(f"$a_{i} = $", width=30, height=40))
+            entry = QLineEdit()
+            entry.setFixedWidth(400)
+            self.entries.append(entry)
+            container.addWidget(entry)
+            container.addStretch()
+            layout.addLayout(container)
+
+        close_button = SimpleButton("Apply", self.apply)
+        bottom_hbox = QHBoxLayout()
+        bottom_hbox.addStretch()
+        bottom_hbox.addWidget(close_button)
+        layout.addStretch()
+        layout.addLayout(bottom_hbox)
+
+        layout.setContentsMargins(10, 10, 10, 10)
+        self.set_main_layout(layout)
+
+    def apply(self):
+        try:
+            expressions = []
+            for entry in self.entries:
+                coeff_equation = entry.text()
+                expressions.append(sympify(coeff_equation))
+
+            self.parent.coeff_calibrator.set_expressions(expressions)
+            self.parent.coeff_calibrator.calibrate(self.parent.get_spectrometer_wl())
+            self.close()
+
+        except SympifyError:
+            ErrorDialog("Enter a valid equation.")
+        except Exception as e:
+            ErrorDialog(str(e), width=400)
+
 
 class SaveFileDialog(Dialog):
     # noinspection PyUnresolvedReferences
@@ -659,13 +783,13 @@ class SaveFileDialog(Dialog):
         layout = QVBoxLayout()
 
         if ask_for_delimiter:
-            self.delimiter_input = LabeledLineEdit("Delimiter:", max_text_width=25, text=",")
+            self.delimiter_input = Entry("Delimiter:", max_text_width=25, text=",")
             layout.addWidget(self.delimiter_input)
         else:
             self.delimiter_input = None
 
         prefix = "\n" if ask_for_delimiter else ""
-        label = QLabel(prefix + "Column 0: Pixel value\n\nColumn 1: Calibrated wavelength value\n\nColumn 2: Intensity\n")
+        label = QLabel(prefix + "Column 0: Pixel values\n\nColumn 1: Calibrated wavelength values\n\nColumn 2: Intensities\n\nColumn 3: Background-subtracted intensities\n")
         layout.addWidget(label)
 
         self.file_input = FileInput(dialog_filter=dialog_filter, is_save_file=True)
@@ -697,7 +821,7 @@ class SaveFileDialog(Dialog):
             else:
                 delimiter = ","
 
-            save_waves(self.file_input.get_chosen_fname(), pixels, wavelengths, intensities, delimiter=delimiter)
+            save_waves(self.file_input.get_chosen_fname(), (pixels, wavelengths, intensities), delimiter=delimiter)
             self.close()
 
         except ValueError:
@@ -713,13 +837,13 @@ class LoadSpectrumDialog(Dialog):
 
         layout = QVBoxLayout()
 
-        self.delimiter_input = LabeledLineEdit("Delimiter:", max_text_width=25, text=",")
+        self.delimiter_input = Entry("Delimiter:", max_text_width=25, text=",")
         layout.addWidget(self.delimiter_input)
-        self.row_start_input = LabeledLineEdit("Start at row:", max_text_width=35, text="22")
+        self.row_start_input = Entry("Start at row:", max_text_width=35, text="21")
         layout.addWidget(self.row_start_input)
-        self.wavelength_column_input = LabeledLineEdit("Wavelength column:", max_text_width=35, text="0")
+        self.wavelength_column_input = Entry("Wavelength column:", max_text_width=35, text="0")
         layout.addWidget(self.wavelength_column_input)
-        self.intensity_column_input = LabeledLineEdit("Intensity column:", max_text_width=35, text="2")
+        self.intensity_column_input = Entry("Intensity column:", max_text_width=35, text="2")
         layout.addWidget(self.intensity_column_input)
         self.file_input = FileInput()
         layout.addWidget(self.file_input)
@@ -749,9 +873,14 @@ class LoadSpectrumDialog(Dialog):
 
             wavelengths, intensities = load_waves(fname, row_start=row_start, x_col=wavelength_col, y_col=intensity_col, delimiter=self.delimiter_input.get_text())
             self.parent.load_spectrum(wavelengths, intensities, self.graph_selector)
+            if self.graph_selector == RealTimePlot.PRIMARY:
+                self.parent.plot.get_selection_control().check_primary()
+            else:
+                self.parent.plot.get_selection_control().check_reference()
             self.close()
-        except ValueError:
-            return
+
+        except:
+            ErrorDialog("An error occurred.  Check your inputs.")
 
 
 class DownloadFromNISTDialog(Dialog):
@@ -762,19 +891,19 @@ class DownloadFromNISTDialog(Dialog):
 
         layout = QVBoxLayout()
 
-        self.element_input = LabeledLineEdit("Element:", max_text_width=30)
+        self.element_input = Entry("Element:", max_text_width=30)
         layout.addWidget(self.element_input)
 
-        self.start_wl_input = LabeledLineEdit("Start wavelength:", max_text_width=35)
+        self.start_wl_input = Entry("Start wavelength:", max_text_width=35)
         layout.addWidget(self.start_wl_input)
 
-        self.end_wl_input = LabeledLineEdit("End wavelength:", max_text_width=35)
+        self.end_wl_input = Entry("End wavelength:", max_text_width=35)
         layout.addWidget(self.end_wl_input)
 
-        self.fwhm_input = LabeledLineEdit("Full width half max:", max_text_width=35)
+        self.fwhm_input = Entry("Full width half max:", max_text_width=35)
         layout.addWidget(self.fwhm_input)
 
-        self.intensity_fraction_input = LabeledLineEdit("Intensity fraction:", max_text_width=35)
+        self.intensity_fraction_input = Entry("Intensity fraction:", max_text_width=35)
         layout.addWidget(self.intensity_fraction_input)
 
         self.file_input = FileInput(label_text="Save to:", is_save_file=True, dialog_filter="TXT File (*.txt)")
@@ -807,6 +936,7 @@ class DownloadFromNISTDialog(Dialog):
             fetch_nist_data(end_wavelength, start_wavelength, element, fpath)
             wavelengths, intensities = read_nist_data(fpath, start_wavelength, end_wavelength, intensity_fraction, full_width_half_max)
             self.parent.load_spectrum(wavelengths, intensities, RealTimePlot.REFERENCE)
+            self.parent.plot.get_selection_control().check_reference()
 
             self.close()
         except ValueError:
@@ -826,16 +956,16 @@ class OpenFromNISTDialog(Dialog):
 
         layout = QVBoxLayout()
 
-        self.start_wl_input = LabeledLineEdit("Start wavelength:", max_text_width=35, text="400")
+        self.start_wl_input = Entry("Start wavelength:", max_text_width=35, text="400")
         layout.addWidget(self.start_wl_input)
 
-        self.end_wl_input = LabeledLineEdit("End wavelength:", max_text_width=35, text="700")
+        self.end_wl_input = Entry("End wavelength:", max_text_width=35, text="700")
         layout.addWidget(self.end_wl_input)
 
-        self.fwhm_input = LabeledLineEdit("Full width half max:", max_text_width=35, text="1")
+        self.fwhm_input = Entry("Full width half max:", max_text_width=35, text="1")
         layout.addWidget(self.fwhm_input)
 
-        self.intensity_fraction_input = LabeledLineEdit("Intensity fraction:", max_text_width=35, text="0.3")
+        self.intensity_fraction_input = Entry("Intensity fraction:", max_text_width=35, text="0.3")
         layout.addWidget(self.intensity_fraction_input)
 
         self.file_input = FileInput(label_text="File:", dialog_filter="TXT File (*.txt)")
@@ -866,6 +996,7 @@ class OpenFromNISTDialog(Dialog):
 
             wavelengths, intensities = read_nist_data(fpath, start_wavelength, end_wavelength, intensity_fraction, full_width_half_max)
             self.parent.load_spectrum(wavelengths, intensities, RealTimePlot.REFERENCE)
+            self.parent.plot.get_selection_control().check_reference()
 
             self.close()
         except ValueError:
@@ -873,4 +1004,23 @@ class OpenFromNISTDialog(Dialog):
         except AttributeError:
             ErrorDialog("NIST could not generate a spectrum based on your inputs")
 
+class AutomaticCalibrator:
+    def __init__(self, plot: RealTimePlot):
+        self.plot = plot
+        self.coeff_expressions = []
+        for i in range(4):
+            self.coeff_expressions.append(sympify("1") if i == 1 else sympify("0"))
 
+    def set_expressions(self, expressions: tuple | list):
+        if len(expressions) != 4:
+            raise ValueError
+        self.coeff_expressions = expressions
+
+    def evaluate(self, wavelength):
+        coefficients = []
+        for expression in self.coeff_expressions:
+            coefficients.append(expression.subs("w", wavelength).evalf())
+        return tuple(coefficients)
+
+    def calibrate(self, wavelength):
+        self.plot.set_coefficients(self.evaluate(wavelength), RealTimePlot.PRIMARY)

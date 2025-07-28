@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import QApplication
 
 from app_widgets import SplashScreen, ErrorDialog
 from camera_engine.mtsse import *
-from gui import Window, load_stylesheet
+from gui_main import Window, load_stylesheet
 
 
 def main():
@@ -14,7 +14,7 @@ def main():
     splash = SplashScreen()
     splash.show()
     QFontDatabase.addApplicationFont("./res/fonts/aharoni/ahronbd.ttf")
-    QFontDatabase.addApplicationFont("./res/fonts/roboto/static/Roboto-SemiBold.ttf")
+    QFontDatabase.addApplicationFont("./res/fonts/roboto/static/Roboto.ttf")
 
     no_camera = False
 

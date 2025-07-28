@@ -43,9 +43,9 @@ class FrameGrab:
 @callback_pointer
 def receive_frame(row, col, attrs, frame_ptr_ptr):
     frame_ptr = cast(frame_ptr_ptr.contents, POINTER(FrameRecord))
-    raw_data = frame_ptr.contents.RawData[:PIXELS + 1]
-    calibrated_data = frame_ptr.contents.CalibData[:PIXELS + 1]
-    absolute_intensity = frame_ptr.contents.AbsInten[:PIXELS + 1]
+    raw_data = frame_ptr.contents.RawData[:PIXELS]
+    calibrated_data = frame_ptr.contents.CalibData[:PIXELS]
+    absolute_intensity = frame_ptr.contents.AbsInten[:PIXELS]
     attributes = {
         "camera_id": attrs.contents.CameraID,
         "exposure_time": attrs.contents.ExposureTime,
