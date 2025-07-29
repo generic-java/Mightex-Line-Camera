@@ -241,3 +241,7 @@ margin: 5px;
 CheckBox {
 background-color: transparent;
 }
+
+#cover {
+background-color: red;
+}

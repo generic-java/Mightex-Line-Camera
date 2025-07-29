@@ -20,6 +20,8 @@ class BlitManager:
     :source: https://matplotlib.org/stable/users/explain/animations/blitting.html
     """
 
+    _drawing_suppressed = False
+
     def __init__(self, canvas, animated_artists=()):
         """
         Parameters
@@ -33,7 +35,7 @@ class BlitManager:
             List of the artists to manage
         """
 
-        self.canvas = canvas
+        self._canvas = canvas
         self._background = None
         self._artists = []
         self.visible_artists = []
@@ -42,16 +44,23 @@ class BlitManager:
         # Grab the background on every draw
         canvas.mpl_connect("draw_event", self.on_draw)
 
+    def set_drawing_enabled(self, enabled: bool):
+        self._drawing_suppressed = not enabled
+
     def on_draw(self, event):
+        if self._drawing_suppressed:
+            return
         """Callback to register with 'draw_event'."""
         if event is not None:
-            if event.canvas != self.canvas:
+            if event.canvas != self._canvas:
                 raise RuntimeError
-        self._background = self.canvas.copy_from_bbox(self.canvas.figure.bbox)
+        self._background = self._canvas.copy_from_bbox(self._canvas.figure.bbox)
         self._draw_animated()
 
     def force_refresh(self):
-        self.canvas.draw()
+        if self._drawing_suppressed:
+            return
+        self._canvas.draw()
 
     def add_artists(self, *artists):
         """
@@ -67,7 +76,7 @@ class BlitManager:
 
         """
         for artist in artists:
-            if artist.figure != self.canvas.figure:
+            if artist.figure != self._canvas.figure:
                 raise RuntimeError
             artist.set_animated(True)
             self._artists.append(artist)
@@ -83,7 +92,7 @@ class BlitManager:
         """Draw all the animated artists."""
         for i in range(len(self._artists)):
             if self.visible_artists[i]:
-                self.canvas.figure.draw_artist(self._artists[i])
+                self._canvas.figure.draw_artist(self._artists[i])
 
     def update(self): # not the bottleneck
         #self.timer.reset()
@@ -93,16 +102,16 @@ class BlitManager:
             self.on_draw(None)
         else:
             # Restore the background
-            self.canvas.restore_region(self._background)
+            self._canvas.restore_region(self._background)
 
             # Draw all the animated artists
             self._draw_animated()
 
             # Update the GUI state
-            self.canvas.blit(self.canvas.figure.bbox)
+            self._canvas.blit(self._canvas.figure.bbox)
 
         # Let the GUI event loop process anything it has to do
-        self.canvas.flush_events()
+        self._canvas.flush_events()
 
 
 
@@ -348,7 +357,8 @@ class ReferenceGraph(Graph):
 
 
 class RealTimePlot(QWidget):
-    style = {
+
+    _style = {
         "background": "#343434",
         "color": "#e44cc3"
     }
@@ -356,8 +366,8 @@ class RealTimePlot(QWidget):
     PRIMARY = 0
     REFERENCE = 1
 
-    primary_hidden = False
-    reference_hidden = False
+    _primary_hidden = False
+    _reference_hidden = False
 
     def __init__(self, data_handler: DataHandler, **kwargs):
         super().__init__()
@@ -365,114 +375,114 @@ class RealTimePlot(QWidget):
         self._background = np.zeros(PIXELS)
         matplotlib.rcParams["path.simplify"] = True
         matplotlib.rcParams["path.simplify_threshold"] = 1.0
-        self.selected_graph = RealTimePlot.PRIMARY
-        self.style.update(kwargs)
-        self.pixel_array = np.arange(0, PIXELS, 1)
-        self.figure = Figure()
-        self.canvas = FigureCanvas(self.figure)
-        self._blit_manager = BlitManager(self.canvas)
-        self.canvas.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self._selected_graph = RealTimePlot.PRIMARY
+        self._style.update(kwargs)
+        self._pixel_array = np.arange(0, PIXELS, 1)
+        self._figure = Figure()
+        self._canvas = FigureCanvas(self._figure)
+        self._blit_manager = BlitManager(self._canvas)
+        self._canvas.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         container = QVBoxLayout()
-        container.addWidget(self.canvas)
+        container.addWidget(self._canvas)
         self.setLayout(container)
         self.data_handler = data_handler
         # noinspection PyUnresolvedReferences
         self.data_handler.get_signal().connect(self.refresh)
 
-        color = self.style["color"]
+        color = self._style["color"]
 
-        primary_axes = self.figure.add_subplot()
-        primary_axes.set_xlim(0, PIXELS)
+        primary_axes = self._figure.add_subplot()
+        primary_axes.set_xlim(0, PIXELS - 1)
         primary_axes.set_ylim(0, 65535)
         primary_axes.grid(True, color="#4b6b71")
         primary_line = Line2D([], [], linewidth=1)
         primary_axes.add_line(primary_line)
 
         # Primary crosshair readout
-        self.primary_crosshair_readout = CrosshairReadout()
+        self._primary_crosshair_readout = CrosshairReadout()
 
         # Primary crosshair
-        self.primary_crosshair = Crosshair(self._blit_manager, self.primary_crosshair_readout, self.canvas, primary_axes, primary_line)
+        self._primary_crosshair = Crosshair(self._blit_manager, self._primary_crosshair_readout, self._canvas, primary_axes, primary_line)
 
-        self.primary_graph = Graph(
+        self._primary_graph = Graph(
             Graph.PIXEL,
             self._blit_manager,
             primary_axes,
             (np.array([]), np.array([])),
             primary_line,
-            self.primary_crosshair,
+            self._primary_crosshair,
             (0, 1, 0, 0)
         )
 
-        reference_axes = self.figure.add_subplot()
+        reference_axes = self._figure.add_subplot()
         reference_axes.set_ylim(0, 1.2)
         reference_line = Line2D([], [], linewidth=1)
         reference_axes.add_line(reference_line)
 
         # Reference crosshair readout
-        self.reference_crosshair_readout = CrosshairReadout()
+        self._reference_crosshair_readout = CrosshairReadout()
 
         # Reference crosshair
-        self.reference_crosshair = Crosshair(self._blit_manager, self.reference_crosshair_readout, self.canvas,
-                                             reference_axes, reference_line)
+        self._reference_crosshair = Crosshair(self._blit_manager, self._reference_crosshair_readout, self._canvas,
+                                              reference_axes, reference_line)
 
-        self.reference_graph = ReferenceGraph(
+        self._reference_graph = ReferenceGraph(
             Graph.WAVELENGTH,
             self._blit_manager,
             reference_axes,
             (np.array([]), np.array([])),
             reference_line,
-            self.reference_crosshair,
+            self._reference_crosshair,
             (0, 1, 0, 0)
         )
 
         # noinspection PyTypeChecker
-        self.canvas.mpl_connect("button_press_event", self.onclick)
+        self._canvas.mpl_connect("button_press_event", self.onclick)
 
         # Primary unit control
-        self.primary_unit_control = WavelengthPixelButton(self.primary_graph, lambda _: self.refresh_primary_x_bounds_readout())
+        self._primary_unit_control = WavelengthPixelButton(self._primary_graph, lambda _: self.refresh_primary_x_bounds_readout())
 
         # Reference unit control
-        self.reference_unit_control = WavelengthPixelButton(self.reference_graph, lambda _: self.refresh_reference_x_bounds_control())
+        self._reference_unit_control = WavelengthPixelButton(self._reference_graph, lambda _: self.refresh_reference_x_bounds_control())
 
         # Primary x limits
-        self.primary_x_min = Entry("Min x:", max_text_width=75)
-        self.primary_x_min.disable_editing()
-        self.primary_x_max = Entry("Max x:", max_text_width=75)
-        self.primary_x_max.disable_editing()
+        self._primary_x_min = Entry("Min x:", max_text_width=75)
+        self._primary_x_min.disable_editing()
+        self._primary_x_max = Entry("Max x:", max_text_width=75)
+        self._primary_x_max.disable_editing()
         self.refresh_primary_x_bounds_readout()
 
         # Primary y limits
-        self.primary_y_min = Entry("Min y:", on_edit=self.relim_primary_y, max_text_width=75)
-        self.primary_y_max = Entry("Max y:", on_edit=self.relim_primary_y, max_text_width=75)
+        self._primary_y_min = Entry("Min y:", on_edit=self.relim_primary_y, max_text_width=75)
+        self._primary_y_max = Entry("Max y:", on_edit=self.relim_primary_y, max_text_width=75)
         self.refresh_primary_y_bounds_control()
 
         # Reference x limits
-        self.reference_x_min = Entry("Min x:", on_edit=self.relim_reference_x, max_text_width=75)
-        self.reference_x_max = Entry("Max x:", on_edit=self.relim_reference_x, max_text_width=75)
+        self._reference_x_min = Entry("Min x:", on_edit=self.relim_reference_x, max_text_width=75)
+        self._reference_x_max = Entry("Max x:", on_edit=self.relim_reference_x, max_text_width=75)
         self.refresh_reference_x_bounds_control()
 
         # Reference y limits
-        self.reference_y_min = Entry("Min y:", on_edit=self.relim_reference_y, max_text_width=75)
-        self.reference_y_max = Entry("Max y:", on_edit=self.relim_reference_y, max_text_width=75)
+        self._reference_y_min = Entry("Min y:", on_edit=self.relim_reference_y, max_text_width=75)
+        self._reference_y_max = Entry("Max y:", on_edit=self.relim_reference_y, max_text_width=75)
         self.refresh_reference_y_bounds_control()
 
         # Selection control
-        self.selection_control = PlotSelector(self)
+        self._selection_control = PlotSelector(self)
 
         # Blit manager
-        self._blit_manager.add_artists(*self.primary_graph.get_artists(), *self.reference_graph.get_artists())
-        self.primary_indices = (0, 1, 2)
-        self.reference_indices = (3, 4, 5)
+        self._blit_manager.add_artists(*self._primary_graph.get_artists(), *self._reference_graph.get_artists())
+        self._primary_indices = (0, 1, 2)
+        self._reference_indices = (3, 4, 5)
 
         # style
-        primary_axes.patch.set_facecolor(self.style["background"])
+        primary_axes.patch.set_facecolor(self._style["background"])
         reference_axes.patch.set_facecolor("#00000000")
         reference_axes.yaxis.tick_right()
         reference_axes.xaxis.tick_top()
-        self.figure.patch.set_facecolor(self.style["background"])
+        self._figure.patch.set_facecolor(self._style["background"])
 
         primary_axes.spines["bottom"].set_color(color)
         primary_axes.spines["top"].set_color("#00000000")
@@ -494,14 +504,21 @@ class RealTimePlot(QWidget):
         primary_line.set_color("#e44cc3")
         reference_line.set_color("orange")
 
+    def suppress_redrawing(self):
+        self._blit_manager.set_drawing_enabled(False)
+
+    def enable_redrawing(self):
+        self._blit_manager.set_drawing_enabled(True)
+        self._blit_manager.force_refresh()
+
     def get_primary_graph(self):
-        return self.primary_graph
+        return self._primary_graph
 
     def get_reference_graph(self):
-        return self.reference_graph
+        return self._reference_graph
 
     def select_graph(self, selected_graph: int):
-        self.selected_graph = selected_graph
+        self._selected_graph = selected_graph
 
     def set_raw_data(self, x, y, graph_selector: int):
         self.get_graph(graph_selector).set_raw_data(x, y)
@@ -510,26 +527,26 @@ class RealTimePlot(QWidget):
             self.refresh_reference_y_bounds_control()
 
     def get_primary_raw_data(self):
-        return self.primary_graph.get_raw_data()
+        return self._primary_graph.get_raw_data()
 
     def get_primary_calibrated_data(self):
-        return self.primary_graph.get_calibrated_data()
+        return self._primary_graph.get_calibrated_data()
 
     def get_primary_data(self):
-        return self.primary_graph.get_data()
+        return self._primary_graph.get_data()
 
     def get_background_subtracted(self):
-        return self.primary_graph.get_data()[2]
+        return self._primary_graph.get_data()[2]
 
     def get_reference_data(self):
-        return self.reference_graph.get_raw_data()
+        return self._reference_graph.get_raw_data()
 
     def refresh(self, frame: Frame | None):
         if frame:
-            self.set_raw_data(self.pixel_array, frame.raw_data, RealTimePlot.PRIMARY)
+            self.set_raw_data(self._pixel_array, frame.raw_data, RealTimePlot.PRIMARY)
 
     def move_crosshair(self, increment: int):
-        graph = self.get_graph(self.selected_graph)
+        graph = self.get_graph(self._selected_graph)
         graph.get_crosshair().increment_index(increment)
 
     # noinspection PyTypeChecker
@@ -538,7 +555,7 @@ class RealTimePlot(QWidget):
         if focused:
             focused.clearFocus()
 
-        graph = self.get_graph(self.selected_graph)
+        graph = self.get_graph(self._selected_graph)
 
         transform = graph.get_axes().transData.inverted()  # This makes a transform that converts display coordinates to data coordinates
         data_x, data_y = transform.transform((event.x, event.y))  # Transforms display coordinates to data coordinates
@@ -556,7 +573,7 @@ class RealTimePlot(QWidget):
     def get_graph(self, graph_selector: int) -> Graph:
         if graph_selector != 0 and graph_selector != 1:
             raise ValueError(f"Expected 0 or 1 but received {graph_selector}")
-        return self.primary_graph if graph_selector == RealTimePlot.PRIMARY else self.reference_graph
+        return self._primary_graph if graph_selector == RealTimePlot.PRIMARY else self._reference_graph
 
     def _refresh_graph(self, graph_selector):
         graph = self.get_graph(graph_selector)
@@ -582,16 +599,16 @@ class RealTimePlot(QWidget):
             refresh_plot()
 
     def relim_primary_y(self):
-        axes = self.primary_graph.get_axes()
-        self.define_axes_bounds(self.primary_y_min, self.primary_y_max, axes.set_ylim, self._refresh_primary)
+        axes = self._primary_graph.get_axes()
+        self.define_axes_bounds(self._primary_y_min, self._primary_y_max, axes.set_ylim, self._refresh_primary)
 
     def relim_reference_x(self):
-        axes = self.reference_graph.get_axes()
-        self.define_axes_bounds(self.reference_x_min, self.reference_x_max, axes.set_xlim, self._refresh_reference)
+        axes = self._reference_graph.get_axes()
+        self.define_axes_bounds(self._reference_x_min, self._reference_x_max, axes.set_xlim, self._refresh_reference)
 
     def relim_reference_y(self):
-        axes = self.reference_graph.get_axes()
-        self.define_axes_bounds(self.reference_y_min, self.reference_y_max, axes.set_ylim, self._refresh_reference)
+        axes = self._reference_graph.get_axes()
+        self.define_axes_bounds(self._reference_y_min, self._reference_y_max, axes.set_ylim, self._refresh_reference)
 
     # noinspection PyTupleAssignmentBalance
     def fit(self, pixels, wavelengths, graph_selector: int):
@@ -619,20 +636,20 @@ class RealTimePlot(QWidget):
         self._after_fit(graph, graph_selector)
 
     def constrain_reference_x(self):
-        x_min, x_max = self.primary_graph.get_x_bounds()
-        self.reference_graph.get_axes().set_xlim(x_min, x_max)
+        x_min, x_max = self._primary_graph.get_x_bounds()
+        self._reference_graph.get_axes().set_xlim(x_min, x_max)
         self.refresh_reference_x_bounds_control()
-        self.reference_graph.refresh()
+        self._reference_graph.refresh()
 
     def _after_fit(self, graph, graph_selector):
         graph.update_x_bounds(refresh=False)
         if graph_selector == RealTimePlot.PRIMARY:
             self.refresh_primary_x_bounds_readout()
-            self.primary_unit_control.check_wavelength()
+            self._primary_unit_control.check_wavelength()
             self.constrain_reference_x()
         else:
             self.refresh_reference_x_bounds_control()
-            self.reference_unit_control.check_wavelength()
+            self._reference_unit_control.check_wavelength()
 
 
         self._blit_manager.force_refresh()  # Redraw the entire plot, including the background
@@ -647,79 +664,79 @@ class RealTimePlot(QWidget):
             self.get_graph(graph_selector).update_x_bounds()
 
     def get_primary_crosshair_readout(self) -> CrosshairReadout:
-        return self.primary_crosshair_readout
+        return self._primary_crosshair_readout
 
     def get_primary_unit_control(self):
-        return self.primary_unit_control
+        return self._primary_unit_control
 
     def get_reference_crosshair_readout(self) -> CrosshairReadout:
-        return self.reference_crosshair_readout
+        return self._reference_crosshair_readout
 
     def get_reference_unit_control(self):
-        return self.reference_unit_control
+        return self._reference_unit_control
 
     def get_selection_control(self):
-        return self.selection_control
+        return self._selection_control
 
     def get_primary_x_min_readout(self):
-        return self.primary_x_min
+        return self._primary_x_min
 
     def get_primary_x_max_readout(self):
-        return self.primary_x_max
+        return self._primary_x_max
 
     def get_primary_y_min_control(self):
-        return self.primary_y_min
+        return self._primary_y_min
 
     def get_primary_y_max_control(self):
-        return self.primary_y_max
+        return self._primary_y_max
 
     def get_reference_x_min_control(self):
-        return self.reference_x_min
+        return self._reference_x_min
 
     def get_reference_x_max_control(self):
-        return self.reference_x_max
+        return self._reference_x_max
 
     def get_reference_y_min_control(self):
-        return self.reference_y_min
+        return self._reference_y_min
 
     def get_reference_y_max_control(self):
-        return self.reference_y_max
+        return self._reference_y_max
 
     def refresh_primary_x_bounds_readout(self):
-        x_min, x_max = self.primary_graph.get_x_bounds()
-        self.primary_x_min.set_text(f"{x_min:.2f}")
-        self.primary_x_max.set_text(f"{x_max:.2f}")
+        x_min, x_max = self._primary_graph.get_x_bounds()
+        self._primary_x_min.set_text(f"{x_min:.2f}")
+        self._primary_x_max.set_text(f"{x_max:.2f}")
 
     def refresh_primary_y_bounds_control(self):
-        y_min, y_max = self.primary_graph.get_y_bounds()
-        self.primary_y_min.set_text(f"{y_min:.2f}")
-        self.primary_y_max.set_text(f"{y_max:.2f}")
+        y_min, y_max = self._primary_graph.get_y_bounds()
+        self._primary_y_min.set_text(f"{y_min:.2f}")
+        self._primary_y_max.set_text(f"{y_max:.2f}")
 
     def refresh_reference_x_bounds_control(self):
-        x_min, x_max = self.reference_graph.get_x_bounds()
-        self.reference_x_min.set_text(f"{x_min:.2f}")
-        self.reference_x_max.set_text(f"{x_max:.2f}")
+        x_min, x_max = self._reference_graph.get_x_bounds()
+        self._reference_x_min.set_text(f"{x_min:.2f}")
+        self._reference_x_max.set_text(f"{x_max:.2f}")
 
 
     def refresh_reference_y_bounds_control(self):
-        y_min, y_max = self.reference_graph.get_y_bounds()
-        self.reference_y_min.set_text(f"{y_min:.2f}")
-        self.reference_y_max.set_text(f"{y_max:.2f}")
+        y_min, y_max = self._reference_graph.get_y_bounds()
+        self._reference_y_min.set_text(f"{y_min:.2f}")
+        self._reference_y_max.set_text(f"{y_max:.2f}")
 
     def toggle_primary_plot(self):
-        self.primary_hidden = not self.primary_hidden
-        if self.primary_hidden:
-            [self._blit_manager.hide_artist(index) for index in self.primary_indices]
+        self._primary_hidden = not self._primary_hidden
+        if self._primary_hidden:
+            [self._blit_manager.hide_artist(index) for index in self._primary_indices]
         else:
-            [self._blit_manager.show_artist(index) for index in self.primary_indices]
+            [self._blit_manager.show_artist(index) for index in self._primary_indices]
         self._blit_manager.update()
 
     def toggle_reference_plot(self):
-        self.reference_hidden = not self.reference_hidden
-        if self.reference_hidden:
-            [self._blit_manager.hide_artist(index) for index in self.reference_indices]
+        self._reference_hidden = not self._reference_hidden
+        if self._reference_hidden:
+            [self._blit_manager.hide_artist(index) for index in self._reference_indices]
         else:
-            [self._blit_manager.show_artist(index) for index in self.reference_indices]
+            [self._blit_manager.show_artist(index) for index in self._reference_indices]
         self._blit_manager.update()
 
     def set_background(self, background: Frame):

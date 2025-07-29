@@ -1,12 +1,49 @@
 import os
 
-from PyQt6.QtCore import Qt, QObject, QEvent, QSize, QPoint
+from PyQt6.QtCore import Qt, QObject, QEvent, QSize, QPoint, QPropertyAnimation, QEasingCurve
 from PyQt6.QtGui import QIcon, QAction, QPixmap, QColor
 from PyQt6.QtWidgets import QWidget, QHBoxLayout, QLabel, QLineEdit, QFileDialog, QSizePolicy, QPushButton, QRadioButton, QMenu, QSplashScreen, QApplication, QToolButton, QMainWindow, QVBoxLayout, QGraphicsDropShadowEffect, QDialog, QLayout
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 
 from utils import format_number
+
+
+class Animation:
+    def __init__(self, before_start=None, on_finished=None):
+        pass
+
+    def start(self):
+        pass
+
+class FullscreenAnimation:
+    def __init__(self, parent: QMainWindow, on_start=None, on_finished=None, duration=125):
+        self.parent = parent
+        self.on_start = on_start
+
+        self.position_animation = QPropertyAnimation(self.parent, b"pos")  # A string literal preceded by 'b' creates a byte array representing the ASCII string
+        self.position_animation.setDuration(duration)
+        self.position_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+        self.size_animation = QPropertyAnimation(self.parent, b"size")  # A string literal preceded by 'b' creates a byte array representing the ASCII string
+        self.size_animation.setDuration(duration)
+        self.size_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+        if on_finished:
+            self.size_animation.finished.connect(on_finished)
+
+    def play(self, start_pos: QPoint, end_pos: QPoint, start_size: QSize, end_size: QSize):
+        self.position_animation.setStartValue(start_pos)
+        self.position_animation.setEndValue(end_pos)
+
+        self.size_animation.setStartValue(start_size)
+        self.size_animation.setEndValue(end_size)
+
+        if self.on_start:
+            self.on_start()
+
+        self.size_animation.start()
+        self.position_animation.start()
 
 
 class FileInput(QWidget):
@@ -23,6 +60,7 @@ class FileInput(QWidget):
         def choose_from_line_edit(text: str):
             self._chosen_fname = text
 
+        # noinspection PyUnresolvedReferences
         self.line_edit.textEdited.connect(choose_from_line_edit)
 
         def pick_file():
@@ -125,6 +163,11 @@ class Entry(QWidget):
         self._line_edit.setFixedWidth(max_text_width)
         self.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Maximum)
 
+    # noinspection PyUnresolvedReferences
+    def set_on_edit(self, on_edit):
+        if on_edit:
+            self._line_edit.textEdited.connect(on_edit)
+
     def disable_editing(self):
         self._line_edit.setReadOnly(True)
 
@@ -159,14 +202,13 @@ class Entry(QWidget):
             raise e
 
 
-
-
 class SimpleButton(QPushButton):
     def __init__(self, name: str, callback):
         super().__init__(name)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Maximum)
         self.clicked.connect(callback)
+
 
 class IconButton(QPushButton):
     def __init__(self, icon: QIcon, callback):
@@ -175,6 +217,7 @@ class IconButton(QPushButton):
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Maximum)
         self.clicked.connect(callback)
+
 
 class ArrowImmuneRadioButton(QRadioButton):
     def __init__(self, *args, **kwargs):
@@ -185,6 +228,7 @@ class ArrowImmuneRadioButton(QRadioButton):
             event.ignore()
         else:
             super().keyPressEvent(event)
+
 
 class MenuButton(QToolButton):
     _open_menu: QMenu = None
@@ -208,6 +252,7 @@ class MenuButton(QToolButton):
     def enterEvent(self, event):
         if MenuButton._open_menu and MenuButton._open_menu is not self.menu():
             MenuButton._open_menu.close()
+
 
 class MenuSelectorButton(QPushButton):
     _selected: str = None
@@ -305,7 +350,6 @@ class ClearFocusFilter(QObject):
         return super().eventFilter(obj, event)
 
 
-
 class WindowHandleButton(QPushButton):
     def __init__(self, primary_icon: QIcon, hover_icon: QIcon, size: QSize):
         super().__init__()
@@ -320,6 +364,7 @@ class WindowHandleButton(QPushButton):
 
     def leaveEvent(self, event=None):
         self.setIcon(self.primary_icon)
+
 
 class CheckBox(QPushButton):
     _checked = False
@@ -356,10 +401,11 @@ class CheckBox(QPushButton):
     def is_checked(self):
         return False
 
+
 class FullscreenToggleButton(QPushButton):
     in_fullscreen = False
 
-    def __init__(self, parent: QMainWindow, fullscreen: QIcon, fullscreen_hover: QIcon, restore_down: QIcon, restore_down_hover: QIcon, size: QSize):
+    def __init__(self, parent: QMainWindow, fullscreen: QIcon, fullscreen_hover: QIcon, restore_down: QIcon, restore_down_hover: QIcon, size: QSize, animation: FullscreenAnimation):
         super().__init__()
         self.parent = parent
         self.fullscreen = fullscreen
@@ -368,9 +414,12 @@ class FullscreenToggleButton(QPushButton):
         self.restore_down_hover = restore_down_hover
         self.primary_icon = fullscreen
         self.hover_icon = fullscreen_hover
+        self.animation = animation
         self.setFixedSize(size)
         self.setIconSize(size)
         self.setIcon(self.primary_icon)
+        self.normal_pos = self.parent.pos()
+        self.normal_size = self.parent.size()
 
     def enterEvent(self, event):
         self.setIcon(self.hover_icon)
@@ -380,15 +429,28 @@ class FullscreenToggleButton(QPushButton):
 
     def mousePressEvent(self, event):
         self.in_fullscreen = not self.in_fullscreen
+
         if self.in_fullscreen:
-            self.parent.showFullScreen()
+            self.normal_pos = self.parent.pos()
+            self.normal_size = self.parent.size()
+            start_pos = self.parent.pos()
+            end_pos = QPoint(0, 0)
+            start_size = self.parent.size()
+            end_size = QApplication.primaryScreen().availableGeometry().size()
+            self.animation.play(start_pos, end_pos, start_size, end_size)
             self.primary_icon = self.restore_down
             self.hover_icon = self.restore_down_hover
         else:
-            self.parent.setWindowState(Qt.WindowState.WindowNoState)
+            start_pos = self.parent.pos()
+            end_pos = self.normal_pos
+
+            start_size = self.parent.size()
+            end_size = self.normal_size
+            self.animation.play(start_pos, end_pos, start_size, end_size)
             self.primary_icon = self.fullscreen
             self.hover_icon = self.fullscreen_hover
         self.setIcon(self.primary_icon)
+
 
 class WindowBar(QWidget):
     def __init__(self, title: str, parent: QWidget, movable: bool = True):
@@ -545,3 +607,23 @@ class TitleLabel(QLabel):
         text-decoration: underline;
         }
         """)
+
+class Picture(QLabel):
+    def __init__(self, pixmap: QPixmap):
+        super().__init__()
+        self.setPixmap(pixmap)
+        self.setScaledContents(True)
+
+    def update_picture(self, pixmap: QPixmap):
+        self.setPixmap(pixmap)
+        self.setScaledContents(True)
+
+def transparent_bg(widget: QWidget):
+    widget.setObjectName("transparent-obj")
+    widget.setStyleSheet("""
+    #transparent-obj {
+    background-color: transparent;
+    }
+    """)
+
+

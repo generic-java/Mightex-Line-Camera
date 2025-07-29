@@ -27,9 +27,10 @@ def main():
     splash.close()
 
     camera = LineCamera()
-    window = Window(camera)
 
+    window = Window(camera)
     window.show()
+
     if no_camera:
         ErrorDialog("No camera was detected.  Restart the app to try again.", "Connection error")
     app.exec()

@@ -10,24 +10,63 @@ from camera_engine.mtsse import LineCamera
 from camera_engine.wrapper import PIXELS
 from loadwaves import load_waves, fetch_nist_data, read_nist_data, save_waves
 from plottools import DataHandler, RealTimePlot
-from utils import format_number
 
 
 class Window(QMainWindow):
     _spectrometer_wl = 350
     def __init__(self, camera: LineCamera):
         super().__init__()
+        self.animation_active = False
 
-        self.setWindowFlag(Qt.WindowType.FramelessWindowHint)
+        self.setWindowFlag(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window)
         self.setWindowTitle("Mightex Manager")
 
         # Camera control
         self.camera = camera
+        self.calibration_checkbox = CheckBox(initially_checked=True)
 
         # All things plotting
         self.plot = RealTimePlot(DataHandler(camera))
         self.coeff_calibrator = AutomaticCalibrator(self.plot)
-        self.setCentralWidget(PlotContainer(self, self.plot, self.camera)) # TODO: make this not a separate object, just a method that returns a widget
+
+        # Main layout
+
+
+        self.central_widget = QWidget()
+        transparent_bg(self.central_widget)
+
+        self.main_widget = self.make_central_widget()
+        self.main_widget.setParent(self.central_widget)
+
+        #self.central_widget.setLayout(None)
+        self.setCentralWidget(self.central_widget)
+        self.main_widget.move(0, 0)
+
+        self.cover = QWidget(self.central_widget)
+        self.cover.hide()
+        self.cover.setObjectName("cover")
+        self.cover.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
+        # Animation
+
+
+
+        self.opacity_effect = QGraphicsOpacityEffect()
+        self.opacity_effect.setOpacity(1)
+        self.cover.setGraphicsEffect(self.opacity_effect)
+
+        self.fade_animation = QPropertyAnimation(self.opacity_effect, b"opacity")
+        self.fade_animation.setDuration(100)
+        self.fade_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+        def finish_fade():
+            self.animation_active = False
+            print("DONE")
+
+        self.fade_animation.finished.connect(finish_fade)
+
+        # Animations
+        self.fullscreen_animation = FullscreenAnimation(self, on_start=self.on_fullscreen_animation_start, on_finished=self.on_fullscreen_animation_stop)
 
         # Create shared dialogs
         self.save_dialog = SaveFileDialog(self)
@@ -37,12 +76,37 @@ class Window(QMainWindow):
         # Menu
         self.create_menu()
 
-        self.toolbar = QToolBar("My main toolbar")
+        self.toolbar = QToolBar()
         self.create_toolbar()
 
         self.resize(1100, 700)
         self.event_filter = ClearFocusFilter()
         self.installEventFilter(self.event_filter)
+
+    def on_fullscreen_animation_start(self):
+        self.plot.suppress_redrawing()
+        self.fade_out()
+        self.main_widget.hide()
+
+    def on_fullscreen_animation_stop(self):
+        self.plot.enable_redrawing()
+        self.main_widget.show()
+        self.fade_in()
+
+    def fade_out(self):
+        self.cover.show()
+        self.fade_animation.setStartValue(0)
+        self.fade_animation.setEndValue(1)
+        self.fade_animation.start()
+
+    def fade_in(self):
+        self.fade_animation.setStartValue(1)
+        self.fade_animation.setEndValue(0)
+        self.fade_animation.start()
+        self.fade_animation.start()
+
+
+
 
     # noinspection PyUnboundLocalVariable
     def keyPressEvent(self, event):
@@ -176,7 +240,43 @@ class Window(QMainWindow):
 
         # Minimize button
         minimize_button = WindowHandleButton(QIcon("./res/icons/minimize.png"), QIcon("./res/icons/minimize_hover.png"), QSize(46, 40))
-        minimize_button.clicked.connect(self.showMinimized)
+
+        def fullscreen():
+            start_pos = self.pos()
+            end_pos = QPoint(0, 0)
+
+            start_size = self.size()
+            end_size = QApplication.primaryScreen().availableGeometry().size()
+
+
+        def minimize():
+            start_pos = self.pos()
+            end_pos = QPoint(0, 0)
+
+            start_size = self.size()
+            end_size = QSize(0, 0)
+
+            self.position_animation = QPropertyAnimation(self, b"pos") # A string literal preceded by 'b' creates a byte array representing the ASCII string
+            self.position_animation.setDuration(75)
+            self.position_animation.setStartValue(start_pos)
+            self.position_animation.setEndValue(end_pos)
+            self.position_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+            self.size_animation = QPropertyAnimation(self, b"size") # A string literal preceded by 'b' creates a byte array representing the ASCII string
+            self.size_animation.setDuration(75)
+            self.size_animation.setStartValue(start_size)
+            self.size_animation.setEndValue(end_size)
+            self.size_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+            #self.plot.suppress_redrawing()
+            self.size_animation.finished.connect(self.plot.enable_redrawing)
+
+            self.size_animation.start()
+            self.position_animation.start()
+
+
+
+        #minimize_button.clicked.connect(self.showMinimized)
+        minimize_button.clicked.connect(minimize)
         button_container.addWidget(minimize_button)
 
         # Fullscreen button
@@ -187,7 +287,8 @@ class Window(QMainWindow):
             QIcon("./res/icons/fullscreen_hover.png"),
             QIcon("./res/icons/restore_down.png"),
             QIcon("./res/icons/restore_down_hover.png"),
-            QSize(46, 40)
+            QSize(46, 40),
+            self.fullscreen_animation
         )
         button_container.addWidget(fullscreen_toggle)
 
@@ -212,7 +313,7 @@ class Window(QMainWindow):
 
         self.setMenuWidget(menu_widget)
 
-
+    # noinspection PyUnresolvedReferences
     def toggle_toolbar(self):
         _ = self.toolbar.show() if self.toolbar.isHidden() else self.toolbar.hide()
 
@@ -244,48 +345,7 @@ class Window(QMainWindow):
         self.toolbar.addAction(ToolbarButton(QIcon("./res/icons/camera.png"),"Acquire frame", self, callback=grab_one_frame))
         self.toolbar.addAction(ToolbarButton(QIcon("./res/icons/background.png"), "Take background", self, callback=grab_one_frame))
 
-    def save_file(self, dialog_filter=""):
-        fname, _ = QFileDialog.getSaveFileName(filter=dialog_filter)
-        if self.camera.has_frame():
-            try:
-                with open(fname, "w") as file:
-                    data = np.transpose(np.column_stack((np.arange(0, PIXELS, 1), self.camera.last_received_frame().raw_data)))
-                    text = ""
-                    for row in data:
-                        text += row[0] + "," + row[1]
-                    file.write(text)
-
-            except Exception as e:
-                print(e)
-
-
-    def save_csv(self):
-        QFileDialog.getExistingDirectory()
-
-    def save_txt(self):
-        pass
-
-    def load_spectrum(self, wavelengths, intensities, graph_selector: int):
-        self.plot.set_raw_data(wavelengths, intensities, graph_selector)
-
-
-    def save_settings(self):
-        pass
-
-    def get_spectrometer_wl(self):
-        return self._spectrometer_wl
-
-
-def load_stylesheet(fname: str):
-    with open(os.path.join("./res/stylesheets", fname)) as file:
-        return file.read()
-
-class PlotContainer(QWidget):
-    def __init__(self, parent: Window, plot: RealTimePlot, camera: LineCamera):
-        super().__init__()
-        self.parent = parent
-        self.plot = plot
-        self.camera = camera
+    def make_central_widget(self):
         plot_container_layout = QVBoxLayout()
 
         plot_container_layout.addWidget(self.plot)
@@ -309,7 +369,7 @@ class PlotContainer(QWidget):
 
         # Crosshair readout
         primary_crosshair_readout_container = QHBoxLayout()
-        primary_crosshair_readout_container.addWidget(plot.get_primary_crosshair_readout())
+        primary_crosshair_readout_container.addWidget(self.plot.get_primary_crosshair_readout())
         primary_crosshair_readout_container.addStretch()
         primary_controls_container.addLayout(primary_crosshair_readout_container)
         primary_controls_container.addWidget(FixedSizeSpacer(height=3))
@@ -330,7 +390,7 @@ class PlotContainer(QWidget):
 
         # Unit control
         primary_unit_control_container = QHBoxLayout()
-        unit_control = plot.get_primary_unit_control()
+        unit_control = self.plot.get_primary_unit_control()
         primary_unit_control_container.addWidget(unit_control)
         primary_controls_container.addLayout(primary_unit_control_container)
         primary_unit_control_container.addStretch()
@@ -368,7 +428,7 @@ class PlotContainer(QWidget):
 
         # Crosshair readout
         reference_crosshair_readout_container = QHBoxLayout()
-        reference_crosshair_readout_container.addWidget(plot.get_reference_crosshair_readout())
+        reference_crosshair_readout_container.addWidget(self.plot.get_reference_crosshair_readout())
         reference_crosshair_readout_container.addStretch()
         reference_controls_container.addWidget(FixedSizeSpacer(height=3))
 
@@ -389,12 +449,12 @@ class PlotContainer(QWidget):
         reference_controls_container.addLayout(reference_y_bounds_container)
 
         reference_controls_container.addWidget(FixedSizeSpacer(height=5))
-        constrain_reference_x_button = SimpleButton("Align x", plot.constrain_reference_x)
+        constrain_reference_x_button = SimpleButton("Align x", self.plot.constrain_reference_x)
         reference_controls_container.addWidget(constrain_reference_x_button)
 
         # Unit control
         reference_unit_control_container = QHBoxLayout()
-        reference_unit_control = plot.get_reference_unit_control()
+        reference_unit_control = self.plot.get_reference_unit_control()
         reference_unit_control_container.addWidget(reference_unit_control)
         reference_controls_container.addLayout(reference_unit_control_container)
         reference_unit_control_container.addStretch()
@@ -420,10 +480,10 @@ class PlotContainer(QWidget):
         def wavelength_edited(text: str):
             try:
                 wavelength = float(text)
-                parent._spectrometer_wl = wavelength
-                parent.coeff_calibrator.calibrate(wavelength)
+                self._spectrometer_wl = wavelength
+                self.coeff_calibrator.calibrate(wavelength)
             except ValueError:
-                ErrorDialog("Please enter a valid number.")
+                pass
 
         center_wl_input = Entry("Spectrometer wavelength (nm)", on_edit=wavelength_edited)
         center_wl_input_container.addWidget(center_wl_input)
@@ -433,7 +493,7 @@ class PlotContainer(QWidget):
         automatic_calibration_container = QHBoxLayout()
         calibration_label = QLabel("Automatic calibration")
         automatic_calibration_container.addWidget(calibration_label)
-        automatic_calibration_container.addWidget(CheckBox(initially_checked=True))
+        automatic_calibration_container.addWidget(self.calibration_checkbox)
         automatic_calibration_container.addStretch()
         camera_controls_container.addLayout(automatic_calibration_container)
         # End region
@@ -441,7 +501,8 @@ class PlotContainer(QWidget):
         background_subtraction_container = QHBoxLayout()
         bg_label = QLabel("Subtract background")
         background_subtraction_container.addWidget(bg_label)
-        background_subtraction_container.addWidget(CheckBox(initially_checked=True))
+        bg_subtract_checkbox = CheckBox(initially_checked=False, callback=lambda subtract: self.plot.get_primary_graph().configure_bg_subtraction(subtract))
+        background_subtraction_container.addWidget(bg_subtract_checkbox)
         background_subtraction_container.addStretch()
         camera_controls_container.addLayout(background_subtraction_container)
 
@@ -455,7 +516,7 @@ class PlotContainer(QWidget):
             self.camera.set_exposure_ms(exposure)
 
 
-        exposure_time_edit = Entry("Exposure time (ms):", on_edit=set_exposure, max_text_width=75, text=f"{camera.get_exposure_ms():.0f}")
+        exposure_time_edit = Entry("Exposure time (ms):", on_edit=set_exposure, max_text_width=75, text=f"{self.camera.get_exposure_ms():.0f}")
         camera_controls_container.addWidget(exposure_time_edit)
 
         camera_controls_box.setFixedSize(QSize(300, 250))
@@ -467,7 +528,47 @@ class PlotContainer(QWidget):
         master_controls_container.addStretch()
         plot_container_layout.addLayout(master_controls_container)
 
-        self.setLayout(plot_container_layout)
+        central_widget = QWidget()
+        central_widget.setLayout(plot_container_layout)
+        return central_widget
+
+    def save_file(self, dialog_filter=""):
+        fname, _ = QFileDialog.getSaveFileName(filter=dialog_filter)
+        if self.camera.has_frame():
+            try:
+                with open(fname, "w") as file:
+                    data = np.transpose(np.column_stack((np.arange(0, PIXELS, 1), self.camera.last_received_frame().raw_data)))
+                    text = ""
+                    for row in data:
+                        text += row[0] + "," + row[1]
+                    file.write(text)
+
+            except Exception as e:
+                print(e)
+
+    def save_csv(self):
+        QFileDialog.getExistingDirectory()
+
+    def save_txt(self):
+        pass
+
+    def load_spectrum(self, wavelengths, intensities, graph_selector: int):
+        self.plot.set_raw_data(wavelengths, intensities, graph_selector)
+
+
+    def save_settings(self):
+        pass
+
+    def get_spectrometer_wl(self):
+        return self._spectrometer_wl
+
+
+def load_stylesheet(fname: str):
+    with open(os.path.join("./res/stylesheets", fname)) as file:
+        return file.read()
+
+
+
 
 
 class MapInput(QWidget):
@@ -1019,7 +1120,7 @@ class AutomaticCalibrator:
     def evaluate(self, wavelength):
         coefficients = []
         for expression in self.coeff_expressions:
-            coefficients.append(expression.subs("w", wavelength).evalf())
+            coefficients.append(float(expression.subs("w", wavelength).evalf()))
         return tuple(coefficients)
 
     def calibrate(self, wavelength):
