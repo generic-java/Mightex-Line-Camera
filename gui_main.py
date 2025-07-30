@@ -1,7 +1,9 @@
 import traceback
 
 import numpy as np
+from PyQt6.QtCore import QRect
 from PyQt6.QtWidgets import *
+from matplotlib.style.core import available
 from sympy import SympifyError
 from sympy.core.backend import sympify
 
@@ -14,6 +16,9 @@ from plottools import DataHandler, RealTimePlot
 
 class Window(QMainWindow):
     _spectrometer_wl = 350
+    _position = QPoint(0, 0)
+    _in_fullscreen = False
+
     def __init__(self, camera: LineCamera):
         super().__init__()
         self.animation_active = False
@@ -30,9 +35,8 @@ class Window(QMainWindow):
         self.coeff_calibrator = AutomaticCalibrator(self.plot)
 
         # Main layout
-
-
         self.central_widget = QWidget()
+        self.central_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         transparent_bg(self.central_widget)
 
         self.main_widget = self.make_central_widget()
@@ -47,27 +51,6 @@ class Window(QMainWindow):
         self.cover.setObjectName("cover")
         self.cover.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
-        # Animation
-
-
-
-        self.opacity_effect = QGraphicsOpacityEffect()
-        self.opacity_effect.setOpacity(1)
-        self.cover.setGraphicsEffect(self.opacity_effect)
-
-        self.fade_animation = QPropertyAnimation(self.opacity_effect, b"opacity")
-        self.fade_animation.setDuration(100)
-        self.fade_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
-
-        def finish_fade():
-            self.animation_active = False
-            print("DONE")
-
-        self.fade_animation.finished.connect(finish_fade)
-
-        # Animations
-        self.fullscreen_animation = FullscreenAnimation(self, on_start=self.on_fullscreen_animation_start, on_finished=self.on_fullscreen_animation_stop)
-
         # Create shared dialogs
         self.save_dialog = SaveFileDialog(self)
         self.csv_save_dialog = SaveFileDialog(self, ask_for_delimiter=False, dialog_filter="CSV Files (*.csv)")
@@ -80,32 +63,29 @@ class Window(QMainWindow):
         self.create_toolbar()
 
         self.resize(1100, 700)
+        self.resize_central_widgets()
         self.event_filter = ClearFocusFilter()
         self.installEventFilter(self.event_filter)
 
-    def on_fullscreen_animation_start(self):
-        self.plot.suppress_redrawing()
-        self.fade_out()
-        self.main_widget.hide()
+    def resizeEvent(self, event):
+        self.resize_central_widgets()
+        self.plot.redraw()
 
-    def on_fullscreen_animation_stop(self):
-        self.plot.enable_redrawing()
-        self.main_widget.show()
-        self.fade_in()
+    def resize_central_widgets(self):
+        size = self.central_widget.size()
+        self.main_widget.resize(size)
+        self.cover.resize(size)
 
-    def fade_out(self):
-        self.cover.show()
-        self.fade_animation.setStartValue(0)
-        self.fade_animation.setEndValue(1)
-        self.fade_animation.start()
+    def show(self):
+        super().show()
+        self.resize_central_widgets()
 
-    def fade_in(self):
-        self.fade_animation.setStartValue(1)
-        self.fade_animation.setEndValue(0)
-        self.fade_animation.start()
-        self.fade_animation.start()
-
-
+    def move(self, position: QPoint):
+        if self._in_fullscreen:
+            return
+        super().move(position)
+        if not self._in_fullscreen:
+            self._position = position
 
 
     # noinspection PyUnboundLocalVariable
@@ -124,9 +104,6 @@ class Window(QMainWindow):
             print(e)
             trace = traceback.format_exc()
             print("Caught an exception:\n", trace)
-
-    def resizeEvent(self, event):
-        self.plot.redraw()
 
     def create_menu(self):
         menu_widget = QWidget()
@@ -281,14 +258,65 @@ class Window(QMainWindow):
 
         # Fullscreen button
 
+        # Opacity
+        opacity_effect = QGraphicsOpacityEffect()
+        opacity_effect.setOpacity(1)
+        self.cover.setGraphicsEffect(opacity_effect)
+
+        # Position
+        position_animation = QPropertyAnimation(self, b"pos")  # A string literal preceded by 'b' creates a byte array representing the ASCII string
+        position_animation.setDuration(125)
+        position_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+        size_animation = QPropertyAnimation(self, b"size")
+        size_animation.setDuration(125)
+        size_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+        def end_fullscreen_animation():
+            fade_animation.setStartValue(1)
+            fade_animation.setEndValue(0)
+            self.cover.show()
+            self.main_widget.show()
+            fade_animation.setDuration(0)
+            fade_animation.finished.disconnect()
+            fade_animation.start()
+
+        def start_fullscreen_animation():
+            self.main_widget.hide()
+            self.cover.hide()
+            self.plot.suppress_redrawing()
+            position_animation.start()
+            size_animation.start()
+            size_animation.finished.connect(end_fullscreen_animation)
+
+
+
+        # Enter fullscreen animation
+        fade_animation = QPropertyAnimation(opacity_effect, b"opacity")
+        fade_animation.setDuration(50)
+        fade_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+
+        def enter_fullscreen():
+            self._in_fullscreen = True
+            screen_geometry = self.screen().availableGeometry()
+            position_animation.setStartValue(self.pos())
+            position_animation.setEndValue(screen_geometry.topLeft())
+            size_animation.setStartValue(self.size())
+            size_animation.setEndValue(screen_geometry.size())
+            self.cover.show()
+            fade_animation.finished.connect(start_fullscreen_animation)
+            fade_animation.start()
+
+
+        def restore_down():
+            self._in_fullscreen = False
+
         fullscreen_toggle = FullscreenToggleButton(
             self,
-            QIcon("./res/icons/fullscreen.png"),
-            QIcon("./res/icons/fullscreen_hover.png"),
-            QIcon("./res/icons/restore_down.png"),
-            QIcon("./res/icons/restore_down_hover.png"),
             QSize(46, 40),
-            self.fullscreen_animation
+            enter_fullscreen,
+            restore_down
         )
         button_container.addWidget(fullscreen_toggle)
 
@@ -544,20 +572,10 @@ class Window(QMainWindow):
                     file.write(text)
 
             except Exception as e:
-                print(e)
-
-    def save_csv(self):
-        QFileDialog.getExistingDirectory()
-
-    def save_txt(self):
-        pass
+                ErrorDialog(e)
 
     def load_spectrum(self, wavelengths, intensities, graph_selector: int):
         self.plot.set_raw_data(wavelengths, intensities, graph_selector)
-
-
-    def save_settings(self):
-        pass
 
     def get_spectrometer_wl(self):
         return self._spectrometer_wl
@@ -566,9 +584,6 @@ class Window(QMainWindow):
 def load_stylesheet(fname: str):
     with open(os.path.join("./res/stylesheets", fname)) as file:
         return file.read()
-
-
-
 
 
 class MapInput(QWidget):
@@ -1125,3 +1140,32 @@ class AutomaticCalibrator:
 
     def calibrate(self, wavelength):
         self.plot.set_coefficients(self.evaluate(wavelength), RealTimePlot.PRIMARY)
+
+class FullscreenAnimation:
+    def __init__(self, parent: Window, on_start=None, on_finished=None, duration=125):
+        self.parent = parent
+        self.on_start = on_start
+
+        self.position_animation = QPropertyAnimation(self.parent, b"pos")  # A string literal preceded by 'b' creates a byte array representing the ASCII string
+        self.position_animation.setDuration(duration)
+        self.position_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+        self.size_animation = QPropertyAnimation(self.parent, b"size")  # A string literal preceded by 'b' creates a byte array representing the ASCII string
+        self.size_animation.setDuration(duration)
+        self.size_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+        if on_finished:
+            self.size_animation.finished.connect(on_finished)
+
+    def play(self, start_pos: QPoint, end_pos: QPoint, start_size: QSize, end_size: QSize):
+        self.position_animation.setStartValue(start_pos)
+        self.position_animation.setEndValue(end_pos)
+
+        self.size_animation.setStartValue(start_size)
+        self.size_animation.setEndValue(end_size)
+
+        if self.on_start:
+            self.on_start()
+
+        self.size_animation.start()
+        self.position_animation.start()

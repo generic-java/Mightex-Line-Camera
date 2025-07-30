@@ -32,7 +32,7 @@ def main():
     window.show()
 
     if no_camera:
-        ErrorDialog("No camera was detected.  Restart the app to try again.", "Connection error")
+        ErrorDialog("No camera was detected.  Restart the app to try again.", "Connection error", parent=window)
     app.exec()
     teardown_engine()
 

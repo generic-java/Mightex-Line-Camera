@@ -243,5 +243,5 @@ background-color: transparent;
 }
 
 #cover {
-background-color: red;
+background-color: #4b6b71;;
 }

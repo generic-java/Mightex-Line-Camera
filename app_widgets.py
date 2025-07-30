@@ -9,41 +9,8 @@ from matplotlib.figure import Figure
 from utils import format_number
 
 
-class Animation:
-    def __init__(self, before_start=None, on_finished=None):
-        pass
 
-    def start(self):
-        pass
 
-class FullscreenAnimation:
-    def __init__(self, parent: QMainWindow, on_start=None, on_finished=None, duration=125):
-        self.parent = parent
-        self.on_start = on_start
-
-        self.position_animation = QPropertyAnimation(self.parent, b"pos")  # A string literal preceded by 'b' creates a byte array representing the ASCII string
-        self.position_animation.setDuration(duration)
-        self.position_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
-
-        self.size_animation = QPropertyAnimation(self.parent, b"size")  # A string literal preceded by 'b' creates a byte array representing the ASCII string
-        self.size_animation.setDuration(duration)
-        self.size_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
-
-        if on_finished:
-            self.size_animation.finished.connect(on_finished)
-
-    def play(self, start_pos: QPoint, end_pos: QPoint, start_size: QSize, end_size: QSize):
-        self.position_animation.setStartValue(start_pos)
-        self.position_animation.setEndValue(end_pos)
-
-        self.size_animation.setStartValue(start_size)
-        self.size_animation.setEndValue(end_size)
-
-        if self.on_start:
-            self.on_start()
-
-        self.size_animation.start()
-        self.position_animation.start()
 
 
 class FileInput(QWidget):
@@ -399,27 +366,28 @@ class CheckBox(QPushButton):
             self.callback(self._checked)
 
     def is_checked(self):
-        return False
+        return self._checked
 
 
 class FullscreenToggleButton(QPushButton):
-    in_fullscreen = False
+    _in_fullscreen = False
 
-    def __init__(self, parent: QMainWindow, fullscreen: QIcon, fullscreen_hover: QIcon, restore_down: QIcon, restore_down_hover: QIcon, size: QSize, animation: FullscreenAnimation):
+    def __init__(self, parent: QMainWindow, size: QSize, enter_fullscreen, restore_down):
         super().__init__()
         self.parent = parent
-        self.fullscreen = fullscreen
-        self.fullscreen_hover = fullscreen_hover
-        self.restore_down = restore_down
-        self.restore_down_hover = restore_down_hover
-        self.primary_icon = fullscreen
-        self.hover_icon = fullscreen_hover
-        self.animation = animation
+        self.fullscreen = QIcon("./res/icons/fullscreen.png")
+        self.fullscreen_hover = QIcon("./res/icons/fullscreen_hover.png")
+        self.restore_down_icon = QIcon("./res/icons/restore_down.png")
+        self.restore_down_hover = QIcon("./res/icons/restore_down_hover.png")
+        self.primary_icon = self.fullscreen
+        self.hover_icon = self.fullscreen_hover
         self.setFixedSize(size)
         self.setIconSize(size)
         self.setIcon(self.primary_icon)
         self.normal_pos = self.parent.pos()
         self.normal_size = self.parent.size()
+        self.enter_fullscreen = enter_fullscreen
+        self.restore_down = restore_down
 
     def enterEvent(self, event):
         self.setIcon(self.hover_icon)
@@ -428,28 +396,20 @@ class FullscreenToggleButton(QPushButton):
         self.setIcon(self.primary_icon)
 
     def mousePressEvent(self, event):
-        self.in_fullscreen = not self.in_fullscreen
+        try:
+            self._in_fullscreen = not self._in_fullscreen
 
-        if self.in_fullscreen:
-            self.normal_pos = self.parent.pos()
-            self.normal_size = self.parent.size()
-            start_pos = self.parent.pos()
-            end_pos = QPoint(0, 0)
-            start_size = self.parent.size()
-            end_size = QApplication.primaryScreen().availableGeometry().size()
-            self.animation.play(start_pos, end_pos, start_size, end_size)
-            self.primary_icon = self.restore_down
-            self.hover_icon = self.restore_down_hover
-        else:
-            start_pos = self.parent.pos()
-            end_pos = self.normal_pos
-
-            start_size = self.parent.size()
-            end_size = self.normal_size
-            self.animation.play(start_pos, end_pos, start_size, end_size)
-            self.primary_icon = self.fullscreen
-            self.hover_icon = self.fullscreen_hover
-        self.setIcon(self.primary_icon)
+            if self._in_fullscreen:
+                self.primary_icon = self.restore_down_icon
+                self.hover_icon = self.restore_down_hover
+                self.enter_fullscreen()
+            else:
+                self.primary_icon = self.fullscreen
+                self.hover_icon = self.fullscreen_hover
+                self.restore_down()
+            self.setIcon(self.primary_icon)
+        except Exception as e:
+            print(e)
 
 
 class WindowBar(QWidget):
@@ -558,8 +518,8 @@ class SelectableLabel(QLabel):
         self.setCursor(Qt.CursorShape.IBeamCursor)
 
 class ErrorDialog(Dialog):
-    def __init__(self, text, title="Error", width: int = None, height: int = None, movable = False):
-        super().__init__(None, title=title, movable=movable)
+    def __init__(self, text, title="Error", width: int = None, height: int = None, movable = False, parent=None):
+        super().__init__(parent, title=title, movable=movable)
 
         if width:
             self.window_container.setFixedWidth(width)
