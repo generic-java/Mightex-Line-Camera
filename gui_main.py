@@ -1,9 +1,7 @@
 import traceback
 
 import numpy as np
-from PyQt6.QtCore import QRect
 from PyQt6.QtWidgets import *
-from matplotlib.style.core import available
 from sympy import SympifyError
 from sympy.core.backend import sympify
 
@@ -12,12 +10,20 @@ from camera_engine.mtsse import LineCamera
 from camera_engine.wrapper import PIXELS
 from loadwaves import load_waves, fetch_nist_data, read_nist_data, save_waves
 from plottools import DataHandler, RealTimePlot
+from utils import AnimationSequence, Animation, size_to_point
 
 
 class Window(QMainWindow):
     _spectrometer_wl = 350
     _position = QPoint(0, 0)
+    _size = QSize(1100, 700)
     _in_fullscreen = False
+    _on_unminimize = None
+    _enter_fullscreen_sequence = None
+    _restore_down_sequence = None
+    _minimize_sequence = None
+    _unminimize_sequence = None
+    _close_sequence = None
 
     def __init__(self, camera: LineCamera):
         super().__init__()
@@ -62,10 +68,17 @@ class Window(QMainWindow):
         self.toolbar = QToolBar()
         self.create_toolbar()
 
-        self.resize(1100, 700)
+        self.resize(self._size)
         self.resize_central_widgets()
         self.event_filter = ClearFocusFilter()
         self.installEventFilter(self.event_filter)
+
+    def changeEvent(self, event):
+        if event.type() == QEvent.Type.WindowStateChange:
+            if event.oldState() & Qt.WindowState.WindowMinimized:
+                if self._on_unminimize:
+                    self._on_unminimize()
+        super().changeEvent(event)
 
     def resizeEvent(self, event):
         self.resize_central_widgets()
@@ -78,6 +91,7 @@ class Window(QMainWindow):
 
     def show(self):
         super().show()
+        self._position = self.pos()
         self.resize_central_widgets()
 
     def move(self, position: QPoint):
@@ -213,117 +227,7 @@ class Window(QMainWindow):
         help_menu = MenuButton("Help")
 
         # Window button container
-        button_container = QHBoxLayout()
-
-        # Minimize button
-        minimize_button = WindowHandleButton(QIcon("./res/icons/minimize.png"), QIcon("./res/icons/minimize_hover.png"), QSize(46, 40))
-
-        def fullscreen():
-            start_pos = self.pos()
-            end_pos = QPoint(0, 0)
-
-            start_size = self.size()
-            end_size = QApplication.primaryScreen().availableGeometry().size()
-
-
-        def minimize():
-            start_pos = self.pos()
-            end_pos = QPoint(0, 0)
-
-            start_size = self.size()
-            end_size = QSize(0, 0)
-
-            self.position_animation = QPropertyAnimation(self, b"pos") # A string literal preceded by 'b' creates a byte array representing the ASCII string
-            self.position_animation.setDuration(75)
-            self.position_animation.setStartValue(start_pos)
-            self.position_animation.setEndValue(end_pos)
-            self.position_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
-
-            self.size_animation = QPropertyAnimation(self, b"size") # A string literal preceded by 'b' creates a byte array representing the ASCII string
-            self.size_animation.setDuration(75)
-            self.size_animation.setStartValue(start_size)
-            self.size_animation.setEndValue(end_size)
-            self.size_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
-            #self.plot.suppress_redrawing()
-            self.size_animation.finished.connect(self.plot.enable_redrawing)
-
-            self.size_animation.start()
-            self.position_animation.start()
-
-
-
-        #minimize_button.clicked.connect(self.showMinimized)
-        minimize_button.clicked.connect(minimize)
-        button_container.addWidget(minimize_button)
-
-        # Fullscreen button
-
-        # Opacity
-        opacity_effect = QGraphicsOpacityEffect()
-        opacity_effect.setOpacity(1)
-        self.cover.setGraphicsEffect(opacity_effect)
-
-        # Position
-        position_animation = QPropertyAnimation(self, b"pos")  # A string literal preceded by 'b' creates a byte array representing the ASCII string
-        position_animation.setDuration(125)
-        position_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
-
-        size_animation = QPropertyAnimation(self, b"size")
-        size_animation.setDuration(125)
-        size_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
-
-        def end_fullscreen_animation():
-            fade_animation.setStartValue(1)
-            fade_animation.setEndValue(0)
-            self.cover.show()
-            self.main_widget.show()
-            fade_animation.setDuration(0)
-            fade_animation.finished.disconnect()
-            fade_animation.start()
-
-        def start_fullscreen_animation():
-            self.main_widget.hide()
-            self.cover.hide()
-            self.plot.suppress_redrawing()
-            position_animation.start()
-            size_animation.start()
-            size_animation.finished.connect(end_fullscreen_animation)
-
-
-
-        # Enter fullscreen animation
-        fade_animation = QPropertyAnimation(opacity_effect, b"opacity")
-        fade_animation.setDuration(50)
-        fade_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
-
-
-        def enter_fullscreen():
-            self._in_fullscreen = True
-            screen_geometry = self.screen().availableGeometry()
-            position_animation.setStartValue(self.pos())
-            position_animation.setEndValue(screen_geometry.topLeft())
-            size_animation.setStartValue(self.size())
-            size_animation.setEndValue(screen_geometry.size())
-            self.cover.show()
-            fade_animation.finished.connect(start_fullscreen_animation)
-            fade_animation.start()
-
-
-        def restore_down():
-            self._in_fullscreen = False
-
-        fullscreen_toggle = FullscreenToggleButton(
-            self,
-            QSize(46, 40),
-            enter_fullscreen,
-            restore_down
-        )
-        button_container.addWidget(fullscreen_toggle)
-
-        # Close button
-        close_button = WindowHandleButton(QIcon("./res/icons/close.png"), QIcon("./res/icons/close_hover.png"), QSize(46, 40))
-        close_button.clicked.connect(self.close)
-        button_container.addWidget(close_button)
+        button_container = self.create_window_handle_buttons()
 
         # Add menu items
         menu_button_container_inner.addWidget(file_menu)
@@ -382,8 +286,6 @@ class Window(QMainWindow):
         master_controls_container = QHBoxLayout()
 
         # Region primary plot controls
-        left_box_layout = QVBoxLayout()
-
         # Controls container
         primary_controls_box = QWidget()
         primary_controls_box.setObjectName("primary-controls-box")
@@ -416,6 +318,11 @@ class Window(QMainWindow):
         primary_y_bounds_container.addStretch()
         primary_controls_container.addLayout(primary_y_bounds_container)
 
+        # Autoscale button
+        primary_controls_container.addWidget(FixedSizeSpacer(height=5))
+        primary_autoscale_y = SimpleButton("Autoscale y", lambda: self.plot.autoscale_graph(RealTimePlot.PRIMARY))
+        primary_controls_container.addWidget(primary_autoscale_y)
+
         # Unit control
         primary_unit_control_container = QHBoxLayout()
         unit_control = self.plot.get_primary_unit_control()
@@ -423,22 +330,7 @@ class Window(QMainWindow):
         primary_controls_container.addLayout(primary_unit_control_container)
         primary_unit_control_container.addStretch()
 
-        primary_controls_box.setFixedSize(QSize(300, 190))
-
-        selection_box = QWidget()
-        selection_box.setObjectName("selection-box")
-        selection_container = QVBoxLayout()
-        selection_label_container = QHBoxLayout()
-        selection_label_container.addWidget(TitleLabel("Selected graph"))
-        selection_container.addLayout(selection_label_container)
-        selection_control = self.plot.get_selection_control()
-        selection_control.setFixedHeight(35)
-        selection_container.addWidget(selection_control)
-        selection_box.setLayout(selection_container)
-        selection_box.setFixedSize(QSize(300, 70))
-
-        left_box_layout.addWidget(primary_controls_box)
-        left_box_layout.addWidget(selection_box)
+        primary_controls_box.setFixedSize(QSize(300, 250))
 
         # End region
 
@@ -458,9 +350,8 @@ class Window(QMainWindow):
         reference_crosshair_readout_container = QHBoxLayout()
         reference_crosshair_readout_container.addWidget(self.plot.get_reference_crosshair_readout())
         reference_crosshair_readout_container.addStretch()
-        reference_controls_container.addWidget(FixedSizeSpacer(height=3))
-
         reference_controls_container.addLayout(reference_crosshair_readout_container)
+        reference_controls_container.addWidget(FixedSizeSpacer(height=3))
 
         # Reference x axis bounds
         reference_x_bounds_container = QHBoxLayout()
@@ -477,8 +368,18 @@ class Window(QMainWindow):
         reference_controls_container.addLayout(reference_y_bounds_container)
 
         reference_controls_container.addWidget(FixedSizeSpacer(height=5))
-        constrain_reference_x_button = SimpleButton("Align x", self.plot.constrain_reference_x)
-        reference_controls_container.addWidget(constrain_reference_x_button)
+
+        reference_axes_control_container = QHBoxLayout()
+        reference_autoscale_y = SimpleButton("Align x", self.plot.constrain_reference_x)
+        reference_axes_control_container.addWidget(reference_autoscale_y)
+
+        reference_autoscale_x = SimpleButton("Autoscale x", lambda: self.plot.get_graph(RealTimePlot.REFERENCE).update_x_bounds())
+        reference_axes_control_container.addWidget(reference_autoscale_x)
+
+        reference_autoscale_y = SimpleButton("Autoscale y", lambda: self.plot.autoscale_graph(RealTimePlot.REFERENCE))
+        reference_axes_control_container.addWidget(reference_autoscale_y)
+
+        reference_controls_container.addLayout(reference_axes_control_container)
 
         # Unit control
         reference_unit_control_container = QHBoxLayout()
@@ -491,6 +392,9 @@ class Window(QMainWindow):
         # End region
 
         # Region camera controls
+
+        right_box_container = QVBoxLayout()
+
         # Reference controls box
         camera_controls_box = QWidget()
         camera_controls_box.setObjectName("camera-controls-box")
@@ -501,6 +405,8 @@ class Window(QMainWindow):
         camera_controls_container.addLayout(camera_label_container)
         camera_controls_container.addStretch()
         camera_controls_box.setLayout(camera_controls_container)
+
+
 
         # Region calibration
         center_wl_input_container = QHBoxLayout()
@@ -547,18 +453,228 @@ class Window(QMainWindow):
         exposure_time_edit = Entry("Exposure time (ms):", on_edit=set_exposure, max_text_width=75, text=f"{self.camera.get_exposure_ms():.0f}")
         camera_controls_container.addWidget(exposure_time_edit)
 
-        camera_controls_box.setFixedSize(QSize(300, 250))
+        camera_controls_box.setFixedSize(QSize(300, 174))
+
+        selection_box = QWidget()
+        selection_box.setObjectName("selection-box")
+        selection_container = QVBoxLayout()
+        selection_label_container = QHBoxLayout()
+        selection_label_container.addWidget(TitleLabel("Selected graph"))
+        selection_container.addLayout(selection_label_container)
+        selection_control = self.plot.get_selection_control()
+        selection_control.setFixedHeight(35)
+        selection_container.addWidget(selection_control)
+        selection_box.setLayout(selection_container)
+        selection_box.setFixedSize(QSize(300, 70))
+
+        right_box_container.addWidget(camera_controls_box)
+        right_box_container.addWidget(selection_box)
         # End region
 
-        master_controls_container.addLayout(left_box_layout)
+        master_controls_container.addWidget(primary_controls_box)
         master_controls_container.addWidget(reference_controls_box)
-        master_controls_container.addWidget(camera_controls_box)
+        master_controls_container.addLayout(right_box_container)
         master_controls_container.addStretch()
         plot_container_layout.addLayout(master_controls_container)
 
         central_widget = QWidget()
         central_widget.setLayout(plot_container_layout)
         return central_widget
+
+    def create_window_handle_buttons(self):
+
+        button_container = QHBoxLayout()
+
+        # Region property animations
+
+        # Opacity
+        content_opacity_effect = QGraphicsOpacityEffect(self)
+        content_opacity_effect.setOpacity(1)
+        self.cover.setGraphicsEffect(content_opacity_effect)
+
+        # Position
+        position_animation = QPropertyAnimation(self, b"pos")  # A string literal preceded by 'b' creates a byte array representing the ASCII string
+        position_animation.setDuration(100)
+        position_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+        size_animation = QPropertyAnimation(self, b"size")
+        size_animation.setDuration(100)
+        size_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+        # Enter fullscreen animation
+        fade_content_animation = QPropertyAnimation(content_opacity_effect, b"opacity")
+        fade_content_animation.setDuration(50)
+        fade_content_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+        fade_window_animation = QPropertyAnimation(self, b"windowOpacity")
+        fade_window_animation.setDuration(50)
+        fade_window_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        # End region
+
+
+        # Region universal prep functions
+        def prep_content_fadeout():
+            content_opacity_effect.setOpacity(0)
+            fade_content_animation.setStartValue(0)
+            fade_content_animation.setEndValue(1)
+            self.cover.show()
+
+        def prep_content_fadein():
+            fade_content_animation.setStartValue(1)
+            fade_content_animation.setEndValue(0)
+            self.cover.show()
+            self.plot.enable_redrawing()
+            self.main_widget.show()
+
+        def finish_fadein():
+            self.cover.hide()
+        # End region
+
+        # Region minimize button
+        def prep_minimize_resize():
+            self.main_widget.hide()
+            self.cover.hide()
+            self.plot.suppress_redrawing()
+            position_animation.setDuration(200)
+            size_animation.setDuration(200)
+            start_size = self.size()
+            end_size = QSize(640, 400)
+            start_position = self.pos()
+            position_animation.setStartValue(start_position)
+            screen_geometry = self.screen().availableGeometry()
+            position_animation.setEndValue(QPoint(
+                screen_geometry.x() + int(screen_geometry.width() / 2) - int(end_size.width() / 2),
+                screen_geometry.y() + screen_geometry.height() - end_size.height())
+            )
+            size_animation.setStartValue(start_size)
+            size_animation.setEndValue(end_size)
+            fade_window_animation.setStartValue(1)
+            fade_window_animation.setEndValue(0)
+            fade_window_animation.setDuration(300)
+
+        def prep_unminimize_fadein():
+            self.main_widget.hide()
+            self.cover.hide()
+            self.plot.suppress_redrawing()
+            position_animation.setDuration(200)
+            size_animation.setDuration(200)
+
+            start_size = self.size()
+            start_position = self.pos()
+            if self._in_fullscreen:
+                screen_geometry = self.screen().availableGeometry()
+                end_position = screen_geometry.topLeft()
+                end_size = screen_geometry.size()
+            else:
+                end_position = self._position
+                end_size = self._size
+
+            position_animation.setStartValue(start_position)
+            position_animation.setEndValue(end_position)
+            size_animation.setStartValue(start_size)
+            size_animation.setEndValue(end_size)
+            fade_window_animation.setStartValue(0)
+            fade_window_animation.setEndValue(1)
+            fade_window_animation.setDuration(200)
+
+        def finish_unminimize():
+            self.cover.hide()
+            self.plot.enable_redrawing()
+
+        self._minimize_sequence = AnimationSequence(
+            Animation((fade_content_animation,), before_start=prep_content_fadeout),
+            Animation((size_animation, position_animation, fade_window_animation), before_start=prep_minimize_resize, on_finished=self.showMinimized)
+        )
+
+        self._unminimize_sequence = AnimationSequence(
+            Animation((size_animation, position_animation, fade_window_animation), before_start=prep_unminimize_fadein),
+            Animation((fade_content_animation, ), before_start=prep_content_fadein, on_finished=finish_unminimize)
+        )
+        self._on_unminimize = self._unminimize_sequence.start
+
+        minimize_button = WindowHandleButton(QIcon("./res/icons/minimize.png"), QIcon("./res/icons/minimize_hover.png"), QSize(46, 40))
+        minimize_button.clicked.connect(self._minimize_sequence.start)
+        button_container.addWidget(minimize_button)
+        # End region
+
+        # Region fullscreen button
+        def prep_fullscreen_resize():
+            self.main_widget.hide()
+            self.cover.hide()
+            self.plot.suppress_redrawing()
+            screen_geometry = self.screen().availableGeometry()
+            position_animation.setStartValue(self.pos())
+            position_animation.setEndValue(screen_geometry.topLeft())
+            size_animation.setStartValue(self.size())
+            size_animation.setEndValue(screen_geometry.size())
+
+        def prep_restore_down_resize():
+            self.main_widget.hide()
+            self.cover.hide()
+            self.plot.suppress_redrawing()
+            position_animation.setStartValue(self.pos())
+            position_animation.setEndValue(self._position)
+            size_animation.setStartValue(self.size())
+            size_animation.setEndValue(self._size)
+
+        self._enter_fullscreen_sequence = AnimationSequence(
+            Animation((fade_content_animation, ), before_start=prep_content_fadeout),
+            Animation((size_animation, position_animation), before_start=prep_fullscreen_resize),
+            Animation((fade_content_animation, ), before_start=prep_content_fadein, on_finished=finish_fadein)
+        )
+
+        self._restore_down_sequence = AnimationSequence(
+            Animation((fade_content_animation,), before_start=prep_content_fadeout),
+            Animation((size_animation, position_animation), before_start=prep_restore_down_resize),
+            Animation((fade_content_animation,), before_start=prep_content_fadein, on_finished=finish_fadein)
+        )
+
+        def enter_fullscreen():
+            self._in_fullscreen = True
+            self._enter_fullscreen_sequence.start()
+
+        def restore_down():
+            self._in_fullscreen = False
+            self._restore_down_sequence.start()
+
+        fullscreen_toggle = FullscreenToggleButton(
+            self,
+            QSize(46, 40),
+            enter_fullscreen,
+            restore_down
+        )
+        button_container.addWidget(fullscreen_toggle)
+        # End region
+
+        # Region close button
+        def prep_close_resize():
+            self.main_widget.hide()
+            self.cover.hide()
+            self.plot.suppress_redrawing()
+            position_animation.setDuration(200)
+            size_animation.setDuration(200)
+            start_size = self.size()
+            end_size = QSize(320, 200)
+            start_position = self.pos()
+            position_animation.setStartValue(start_position)
+            position_animation.setEndValue(start_position + 0.5 * size_to_point(start_size) - 0.5 * size_to_point(end_size))
+            size_animation.setStartValue(start_size)
+            size_animation.setEndValue(end_size)
+            fade_window_animation.setStartValue(1)
+            fade_window_animation.setEndValue(0)
+            fade_window_animation.setDuration(300)
+
+        self._close_sequence = AnimationSequence(
+            Animation((fade_content_animation,), before_start=prep_content_fadeout),
+            Animation((size_animation, position_animation, fade_window_animation), before_start=prep_close_resize, on_finished=self.close)
+        )
+
+        close_button = WindowHandleButton(QIcon("./res/icons/close.png"), QIcon("./res/icons/close_hover.png"), QSize(46, 40))
+        close_button.clicked.connect(self._close_sequence.start)
+        button_container.addWidget(close_button)
+        # End region
+
+        return button_container
 
     def save_file(self, dialog_filter=""):
         fname, _ = QFileDialog.getSaveFileName(filter=dialog_filter)
@@ -912,7 +1028,7 @@ class SaveFileDialog(Dialog):
 
         layout.addWidget(self.file_input)
 
-        save_button = SimpleButton("Save", self.on_close)
+        save_button = SimpleButton("Save", self.save)
 
         bottom_hbox = QHBoxLayout()
         bottom_hbox.addStretch()
@@ -927,9 +1043,9 @@ class SaveFileDialog(Dialog):
         super().open()
         self.setFixedSize(self.size())
 
-    def on_close(self):
+    def save(self):
         try:
-            pixels, wavelengths, intensities = self.parent.plot.get_primary_data()
+            pixels, wavelengths, intensities, bg_subtracted = self.parent.plot.get_primary_data()
             if self.delimiter_input:
                 delimiter = self.delimiter_input.get_text()
                 if not delimiter:
@@ -937,11 +1053,11 @@ class SaveFileDialog(Dialog):
             else:
                 delimiter = ","
 
-            save_waves(self.file_input.get_chosen_fname(), (pixels, wavelengths, intensities), delimiter=delimiter)
+            save_waves(self.file_input.get_chosen_fname(), (pixels, wavelengths, intensities, bg_subtracted), delimiter=delimiter)
             self.close()
 
-        except ValueError:
-            return
+        except ValueError as e:
+            ErrorDialog(parent=self.parent, text=e)
 
 
 class LoadSpectrumDialog(Dialog):

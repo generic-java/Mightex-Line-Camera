@@ -1,4 +1,5 @@
 import sys
+import traceback
 
 from PyQt6.QtGui import QFontDatabase
 from PyQt6.QtWidgets import QApplication
@@ -8,8 +9,22 @@ from camera_engine.mtsse import *
 from gui_main import Window, load_stylesheet
 
 
+class CustomApplication(QApplication):
+    def notify(self, receiver, event):
+        try:
+            return super().notify(receiver, event)
+        except Exception:
+            traceback.print_exc()
+            return False
+
+
+def excepthook(exc_type, exc_value, exc_tb):
+    traceback.print_exception(exc_type, exc_value, exc_tb)
+
+sys.excepthook = excepthook
+
 def main():
-    app = QApplication(sys.argv)
+    app = CustomApplication(sys.argv)
     app.setStyleSheet(load_stylesheet("style.qss"))
     splash = SplashScreen()
     splash.show()

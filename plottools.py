@@ -330,6 +330,14 @@ class Graph:
         if refresh:
             self.refresh()
 
+    def autoscale_y(self):
+        if (len(self._raw_x)) == 0:
+            return
+        display_data = self._line.get_ydata()
+        y_min, y_max = np.min(display_data), np.max(display_data)
+        self._axes.set_ylim(y_min - abs(y_min) * 0.005, 1.2 * y_max)
+        self.refresh()
+
     def refresh(self):
         self._crosshair.refresh()
         self._blit_manager.force_refresh()
@@ -348,7 +356,8 @@ class ReferenceGraph(Graph):
         super().set_raw_data(x, y)
         x_min = np.min(x)
         x_max = np.max(x)
-        y_min = np.min(y) * 1.005
+        current_y_min = np.min(y)
+        y_min = current_y_min - abs(current_y_min) * 0.005
         y_max = np.max(y) * 1.2
         self._axes.set_xlim(x_min, x_max)
         self._axes.set_ylim(y_min, y_max)
@@ -522,7 +531,11 @@ class RealTimePlot(QWidget):
 
     def set_raw_data(self, x, y, graph_selector: int):
         self.get_graph(graph_selector).set_raw_data(x, y)
-        if graph_selector == RealTimePlot.REFERENCE:
+        if graph_selector == RealTimePlot.PRIMARY and self._primary_hidden:
+            self.toggle_primary_plot()
+        elif graph_selector == RealTimePlot.REFERENCE: # TODO: encapsulate this in Graph class
+            if self._reference_hidden:
+                self.toggle_reference_plot()
             self.refresh_reference_x_bounds_control()
             self.refresh_reference_y_bounds_control()
 
@@ -544,6 +557,13 @@ class RealTimePlot(QWidget):
     def refresh(self, frame: Frame | None):
         if frame:
             self.set_raw_data(self._pixel_array, frame.raw_data, RealTimePlot.PRIMARY)
+            x_min = self._primary_x_min.get_float()
+            x_max = self._primary_x_max.get_float()
+            display_x, display_y = self._primary_graph.get_line().get_data()
+            tol = 1e-3
+            if abs(np.min(display_x) - x_min) > tol or abs(
+                    np.max(display_x) - x_max) > tol:  # If the x bounds of the new dataset are different
+                self.refresh_primary_x_bounds_readout()
 
     def move_crosshair(self, increment: int):
         graph = self.get_graph(self._selected_graph)
@@ -739,8 +759,13 @@ class RealTimePlot(QWidget):
             [self._blit_manager.show_artist(index) for index in self._reference_indices]
         self._blit_manager.update()
 
-    def set_background(self, background: Frame):
-        self._background = background
+    def autoscale_graph(self, graph_selector: int):
+        graph = self.get_graph(graph_selector)
+        graph.autoscale_y()
+        if graph_selector == RealTimePlot.PRIMARY:
+            self.refresh_primary_y_bounds_control()
+        else:
+            self.refresh_reference_y_bounds_control()
 
 
 def linear(x, a0, a1):

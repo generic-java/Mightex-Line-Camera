@@ -245,3 +245,11 @@ background-color: transparent;
 #cover {
 background-color: #4b6b71;;
 }
+
+WindowHandleButton {
+margin: 0px;
+}
+
+FullscreenToggleButton {
+margin: 0px;
+}
