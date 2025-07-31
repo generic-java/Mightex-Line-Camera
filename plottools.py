@@ -131,7 +131,7 @@ class DataHandler(QObject):
         def frame_callback(_):
             self.awaiting_plot = True
 
-        self.camera.set_frame_callback(frame_callback)
+        self.camera.add_frame_callback(frame_callback)
         self.timer = QTimer()
         self.timer.setInterval(int(1000 / self.FPS))
         self.timer.timeout.connect(self._plot_data)
@@ -293,7 +293,11 @@ class Graph:
         return self._line
 
     def set_background(self, background):
+        if len(self._raw_x) != 0 and len(self._raw_x) != len(background):
+            raise IncompatibleSpectrumSizeError
         self._background = background
+        if len(self._raw_x) == 0:
+            return
         self._bg_subtracted = self._raw_y - background
         self._line.set_ydata(self._bg_subtracted)
         self._blit_manager.update()
@@ -311,6 +315,7 @@ class Graph:
 
     def set_fitting_params(self, params: tuple):
         self._fitting_params = params
+        self._calibrated_x = cubic(self._raw_x, *self._fitting_params)
 
     def get_x_bounds(self):
         return self._axes.get_xlim()
@@ -323,7 +328,7 @@ class Graph:
             return
         if self._unit_type == Graph.WAVELENGTH:
             self._axes.set_xlim(cubic(np.min(self._raw_x), *self._fitting_params), cubic(np.max(self._raw_x), *self._fitting_params))
-            self._line.set_xdata(cubic(self._raw_x, *self._fitting_params))
+            self._line.set_xdata(self._calibrated_x)
         elif self._unit_type == Graph.PIXEL:
             self._axes.set_xlim(np.min(self._raw_x), np.max(self._raw_x))
             self._line.set_xdata(self._raw_x)
@@ -531,8 +536,10 @@ class RealTimePlot(QWidget):
 
     def set_raw_data(self, x, y, graph_selector: int):
         self.get_graph(graph_selector).set_raw_data(x, y)
-        if graph_selector == RealTimePlot.PRIMARY and self._primary_hidden:
-            self.toggle_primary_plot()
+        if graph_selector == RealTimePlot.PRIMARY:
+            self.refresh_primary_x_bounds_readout()
+            if self._primary_hidden:
+                self.toggle_primary_plot()
         elif graph_selector == RealTimePlot.REFERENCE: # TODO: encapsulate this in Graph class
             if self._reference_hidden:
                 self.toggle_reference_plot()
@@ -767,6 +774,12 @@ class RealTimePlot(QWidget):
         else:
             self.refresh_reference_y_bounds_control()
 
+    def set_background(self, background_intensities):
+        self._primary_graph.set_background(background_intensities)
+
+    def set_background_enabled(self, enabled: bool):
+        self._primary_graph.configure_bg_subtraction(enabled)
+
 
 def linear(x, a0, a1):
     return a0 + a1 * x
@@ -778,6 +791,11 @@ def quadratic(x, a0, a1, a2):
 
 def cubic(x, a0, a1, a2, a3):
     return a0 + a1 * x + a2 * x ** 2 + a3 * x ** 3
+
+
+class IncompatibleSpectrumSizeError(RuntimeError):
+    def __init__(self, data_length, bg_length):
+        super().__init__(f"Could not subtract a background with {bg_length} points from a spectrum with {data_length} points")
 
 
 class WavelengthPixelButton(QWidget):

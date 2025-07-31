@@ -9,12 +9,13 @@ PIXELS = 3648
 class _FrameGrabber(Thread):
     active = True
     run_forever = False
-    def __init__(self, device_id, frames, interval_ms):
+    def __init__(self, device_id, frames, interval_ms, callback):
         super().__init__()
         self.device_id = device_id
         self.frames = frames
         self.run_forever = (frames == -1)
         self.interval = interval_ms / 1000
+        self.callback = callback
         self.start()
 
     def run(self):
@@ -72,7 +73,7 @@ class LineCamera:
     _default_exposure_time: int = 50
     _frame_grabber: _FrameGrabber = None
     _last_received_frame: Frame = None
-    _frame_callback = None
+    _frame_callbacks = []
     _exposure_microseconds = 50000
 
     def __init__(self, activate=True, device_id=1):
@@ -83,8 +84,11 @@ class LineCamera:
         if activate:
             self.activate()
 
-    def set_frame_callback(self, callback):
-        self._frame_callback = callback
+    def add_frame_callback(self, callback):
+        self._frame_callbacks.append(callback)
+
+    def remove_callback(self, callback):
+        self._frame_callbacks.remove(callback)
 
     def activate(self):
         set_device_active_status(self.device_id, True)
@@ -93,11 +97,11 @@ class LineCamera:
     def shutdown(self):
         set_device_active_status(self.device_id, False)
 
-    def grab_spectrum_frames(self, frames:int =-1, interval_ms=0):
+    def grab_spectrum_frames(self, frames:int =-1, interval_ms=0, callback=None):
         if self._frame_grabber and self._frame_grabber.active:
             raise Exception("User attempted to grab frames before stopping an existing frame grab process")
 
-        self._frame_grabber = _FrameGrabber(self.device_id, frames, interval_ms)
+        self._frame_grabber = _FrameGrabber(self.device_id, frames, interval_ms, callback)
 
     def stop_spectrum_grab(self):
         if self._frame_grabber:
@@ -133,7 +137,8 @@ class LineCamera:
 
     def add_frame(self, frame: Frame):
         self._last_received_frame = frame
-        self._frame_callback(frame)
+        for frame_callback in self._frame_callbacks:
+            frame_callback(frame)
 
 
 

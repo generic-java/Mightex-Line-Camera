@@ -1,17 +1,19 @@
 import traceback
 
 import numpy as np
+from PyQt6.QtCore import QPropertyAnimation, QEasingCurve
 from PyQt6.QtWidgets import *
 from sympy import SympifyError
 from sympy.core.backend import sympify
 
 from app_widgets import *
-from camera_engine.mtsse import LineCamera
-from camera_engine.wrapper import PIXELS
+from camera_engine.mtsse import LineCamera, Frame
 from loadwaves import load_waves, fetch_nist_data, read_nist_data, save_waves
-from plottools import DataHandler, RealTimePlot
+from plottools import DataHandler, RealTimePlot, IncompatibleSpectrumSizeError
+from settings_manager import Settings
 from utils import AnimationSequence, Animation, size_to_point
 
+settings = Settings()
 
 class Window(QMainWindow):
     _spectrometer_wl = 350
@@ -151,7 +153,7 @@ class Window(QMainWindow):
 
         # Primary loader
         load_first = load_spectra.addAction("Load primary spectrum")
-        primary_spectrum_dialog = LoadSpectrumDialog(self, RealTimePlot.PRIMARY)
+        primary_spectrum_dialog = LoadDisplayableSpectrumDialog(self, RealTimePlot.PRIMARY)
         load_first.triggered.connect(primary_spectrum_dialog.open)
         load_spectra.addAction(load_first)
 
@@ -167,7 +169,7 @@ class Window(QMainWindow):
         open_from_nist = load_second_menu.addAction("Open from NIST file")
         open_from_nist.triggered.connect(nist_open_dialog.open)
 
-        secondary_spectrum_dialog = LoadSpectrumDialog(self, RealTimePlot.REFERENCE)
+        secondary_spectrum_dialog = LoadDisplayableSpectrumDialog(self, RealTimePlot.REFERENCE)
         load_file_normal.triggered.connect(secondary_spectrum_dialog.open)
 
         # View menu
@@ -223,6 +225,12 @@ class Window(QMainWindow):
         calibrate_reference_wavelength_coeff.triggered.connect(enter_coeff_dialog_reference.open)
         # End region
 
+        # Region load background
+        load_background_dialog = LoadBackgroundDialog(self)
+        load_background = tools_menu.add_action(QAction("Load background"))
+        load_background.triggered.connect(load_background_dialog.open)
+        # End region
+
         # Help menu
         help_menu = MenuButton("Help")
 
@@ -275,7 +283,15 @@ class Window(QMainWindow):
             self.camera.grab_spectrum_frames(1)
 
         self.toolbar.addAction(ToolbarButton(QIcon("./res/icons/camera.png"),"Acquire frame", self, callback=grab_one_frame))
-        self.toolbar.addAction(ToolbarButton(QIcon("./res/icons/background.png"), "Take background", self, callback=grab_one_frame))
+
+        def take_background():
+            def receive_background(frame: Frame):
+                self.plot.set_background(frame.raw_data[1])
+                self.camera.remove_callback(receive_background)
+            self.camera.add_frame_callback(receive_background)
+            grab_one_frame()
+
+        self.toolbar.addAction(ToolbarButton(QIcon("./res/icons/background.png"), "Take background", self, callback=take_background))
 
     def make_central_widget(self):
         plot_container_layout = QVBoxLayout()
@@ -676,19 +692,6 @@ class Window(QMainWindow):
 
         return button_container
 
-    def save_file(self, dialog_filter=""):
-        fname, _ = QFileDialog.getSaveFileName(filter=dialog_filter)
-        if self.camera.has_frame():
-            try:
-                with open(fname, "w") as file:
-                    data = np.transpose(np.column_stack((np.arange(0, PIXELS, 1), self.camera.last_received_frame().raw_data)))
-                    text = ""
-                    for row in data:
-                        text += row[0] + "," + row[1]
-                    file.write(text)
-
-            except Exception as e:
-                ErrorDialog(e)
 
     def load_spectrum(self, wavelengths, intensities, graph_selector: int):
         self.plot.set_raw_data(wavelengths, intensities, graph_selector)
@@ -1061,11 +1064,9 @@ class SaveFileDialog(Dialog):
 
 
 class LoadSpectrumDialog(Dialog):
-    def __init__(self, parent: Window, graph_selector):
-        super().__init__(parent, "Load primary spectrum" if graph_selector == RealTimePlot.PRIMARY else "Load reference spectrum")
+    def __init__(self, parent: Window, title: str):
+        super().__init__(parent, title)
         self.parent = parent
-        self.graph_selector = graph_selector
-        self.setObjectName("load-spectrum-dialog")
 
         layout = QVBoxLayout()
 
@@ -1096,22 +1097,54 @@ class LoadSpectrumDialog(Dialog):
         self.setFixedSize(self.size())
 
     def on_close(self):
+        fname = self.file_input.get_chosen_fname()
+
+        row_start = self.row_start_input.get_int()
+        wavelength_col = self.wavelength_column_input.get_int()
+        intensity_col = self.intensity_column_input.get_int()
+
+        wavelengths, intensities = load_waves(fname, row_start=row_start, x_col=wavelength_col, y_col=intensity_col, delimiter=self.delimiter_input.get_text())
+
+        return wavelengths, intensities
+
+class LoadDisplayableSpectrumDialog(LoadSpectrumDialog):
+    def __init__(self, parent: Window, graph_selector: int):
+        super().__init__(parent, title="Load primary spectrum" if graph_selector == RealTimePlot.PRIMARY else "Load reference spectrum")
+        self.graph_selector = graph_selector
+
+    def on_close(self):
+        # noinspection PyBroadException
         try:
-            fname = self.file_input.get_chosen_fname()
-
-            row_start = self.row_start_input.get_int()
-            wavelength_col = self.wavelength_column_input.get_int()
-            intensity_col = self.intensity_column_input.get_int()
-
-            wavelengths, intensities = load_waves(fname, row_start=row_start, x_col=wavelength_col, y_col=intensity_col, delimiter=self.delimiter_input.get_text())
+            wavelengths, intensities = super().on_close()
             self.parent.load_spectrum(wavelengths, intensities, self.graph_selector)
             if self.graph_selector == RealTimePlot.PRIMARY:
                 self.parent.plot.get_selection_control().check_primary()
             else:
                 self.parent.plot.get_selection_control().check_reference()
             self.close()
-
+        except ValueError:
+            return
         except:
+            ErrorDialog("An error occurred.  Check your inputs.")
+
+
+class LoadBackgroundDialog(LoadSpectrumDialog):
+    def __init__(self, parent: Window):
+        super().__init__(parent, title="Load background")
+
+    def on_close(self):
+        # noinspection PyBroadException
+        try:
+            _, intensities = super().on_close()
+            self.parent.plot.set_background(intensities)
+            self.parent.plot.set_background_enabled(True)
+            self.close()
+        except IncompatibleSpectrumSizeError as e:
+            ErrorDialog(e)
+        except ValueError:
+            return
+        except:
+            traceback.print_exc()
             ErrorDialog("An error occurred.  Check your inputs.")
 
 

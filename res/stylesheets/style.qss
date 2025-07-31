@@ -104,10 +104,6 @@ font-family: "Roboto";
 font-size: 14px;
 }
 
-QPushButton:hover {
-cursor: pointing-hand;
-}
-
 QLineEdit {
 background-color: #343434;
 color: #6aee35;

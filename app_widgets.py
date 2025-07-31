@@ -1,16 +1,12 @@
 import os
 
-from PyQt6.QtCore import Qt, QObject, QEvent, QSize, QPoint, QPropertyAnimation, QEasingCurve
+from PyQt6.QtCore import Qt, QObject, QEvent, QSize, QPoint
 from PyQt6.QtGui import QIcon, QAction, QPixmap, QColor
 from PyQt6.QtWidgets import QWidget, QHBoxLayout, QLabel, QLineEdit, QFileDialog, QSizePolicy, QPushButton, QRadioButton, QMenu, QSplashScreen, QApplication, QToolButton, QMainWindow, QVBoxLayout, QGraphicsDropShadowEffect, QDialog, QLayout
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 
 from utils import format_number
-
-
-
-
 
 
 class FileInput(QWidget):
@@ -209,6 +205,7 @@ class MenuButton(QToolButton):
 
     def add_action(self, action: QAction):
         self._menu.addAction(action)
+        return action
 
     def add_menu(self, name: str):
         return self._menu.addMenu(name)
