@@ -821,6 +821,7 @@ class WavelengthPixelButton(QWidget):
         layout.addWidget(self._wavelength)
         layout.addStretch()
         self.setFixedWidth(185)
+        self.setFixedHeight(40)
         self.setLayout(layout)
 
     def check_wavelength(self, block_callback=True):
@@ -853,7 +854,7 @@ class PlotSelector(QWidget):
         layout.addWidget(FixedSizeSpacer(width=10))
         layout.addWidget(self._reference)
         layout.addStretch()
-        self.setFixedWidth(192)
+        self.setFixedWidth(210)
         self.setLayout(layout)
 
     def check_primary(self):

@@ -1,4 +1,5 @@
 import os
+from json import JSONDecodeError
 
 import json
 
@@ -15,15 +16,19 @@ class Settings:
     settings_fpath = os.path.join(str(__file__).replace("settings_manager.py", ""), "json/settings.json")
 
     def __init__(self):
-        with open(self.settings_fpath, "r") as file:
-            _loadable_settings.update(json.load(file))
+        try:
+            with open(self.settings_fpath, "r") as file:
+                _loadable_settings.update(json.load(file))
+        except JSONDecodeError:
+            with open(self.settings_fpath, "w") as file:
+                file.write("{}")
 
     def __setattr__(self, key, value):
         if key in _loadable_settings:
             _loadable_settings[key] = value
         else:
             raise KeyError
-    def __getattribute__(self, key):
+    def __getattr__(self, key):
         if key in _loadable_settings:
             return _loadable_settings[key]
         elif key in _unloadable_settings:
@@ -33,4 +38,4 @@ class Settings:
 
     def save_settings(self):
         with open(self.settings_fpath, "w") as file:
-            json.dump(_loadable_settings, file)
+            file.write(json.dumps(_loadable_settings))
