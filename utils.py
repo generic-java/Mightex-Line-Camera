@@ -1,3 +1,4 @@
+import os
 import time
 from decimal import Decimal, ROUND_HALF_UP
 from threading import Thread
@@ -95,3 +96,6 @@ class AnimationSequence:
 
 def size_to_point(size: QSize):
     return QPoint(size.width(), size.height())
+
+def current_dir():
+    return os.path.dirname(str(__file__))

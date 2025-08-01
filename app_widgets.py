@@ -11,7 +11,7 @@ from utils import format_number
 
 class FileInput(QWidget):
     _chosen_fname = None
-    def __init__(self, label_text="File:", parent=None, max_width=300, is_save_file=False, dialog_filter="CSV File (*.csv);;TXT File (*.txt)"):
+    def __init__(self, label_text="File:", parent=None, max_width=300, is_save_file=False, dialog_filter="CSV File (*.csv);;TXT File (*.txt)", directory=None, start_path="", on_file_chosen=None):
         super().__init__(parent)
 
         layout = QHBoxLayout(self)
@@ -19,21 +19,29 @@ class FileInput(QWidget):
 
         self.label = QLabel(label_text)
         self.line_edit = QLineEdit()
+        self.line_edit.setText(start_path)
+        self._chosen_fname = start_path
+
+        def file_chosen():
+            if on_file_chosen:
+                on_file_chosen(self._chosen_fname)
 
         def choose_from_line_edit(text: str):
             self._chosen_fname = text
+            file_chosen()
 
         # noinspection PyUnresolvedReferences
         self.line_edit.textEdited.connect(choose_from_line_edit)
 
         def pick_file():
             if is_save_file:
-                fname, _ = QFileDialog.getSaveFileName(filter=dialog_filter)
+                fname, _ = QFileDialog.getSaveFileName(filter=dialog_filter, directory=directory)
             else:
-                fname, _ = QFileDialog.getOpenFileName(filter=dialog_filter)
+                fname, _ = QFileDialog.getOpenFileName(filter=dialog_filter, directory=directory)
             if fname:
                 self.line_edit.setText(fname)
                 self._chosen_fname = fname
+                file_chosen()
 
         self.load_file_button = SimpleButton("Choose file", pick_file)
 

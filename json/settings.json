@@ -1,1 +1,1 @@
-{}
+{"spectrometer_wavelength": "900", "subtract_bg": true, "auto_calibrate": false, "nist_element": "Ne I", "start_nist_wl": "300", "end_nist_wl": "800", "nist_fwhm": "0.1", "nist_intensity_fraction": "0.5", "nist_file": "C:/Users/power/Downloads/argon.txt", "load_row_start": "0", "load_wl_col": "0", "load_intensity_col": "2", "a0": 0.0, "a1": 1.0, "a2": 0.0, "a3": 0.0, "a0_eq": "0 * w", "a1_eq": "1", "a2_eq": "0 * w", "a3_eq": "0 * w"}

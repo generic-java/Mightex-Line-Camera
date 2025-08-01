@@ -1,4 +1,6 @@
+import os.path
 import traceback
+import webbrowser
 
 import numpy as np
 from PyQt6.QtCore import QPropertyAnimation, QEasingCurve
@@ -11,9 +13,8 @@ from camera_engine.mtsse import LineCamera, Frame
 from loadwaves import load_waves, fetch_nist_data, read_nist_data, save_waves
 from plottools import DataHandler, RealTimePlot, IncompatibleSpectrumSizeError
 from settings_manager import Settings
-from utils import AnimationSequence, Animation, size_to_point
+from utils import AnimationSequence, Animation, size_to_point, current_dir
 
-settings = Settings()
 
 class Window(QMainWindow):
     _spectrometer_wl = 350
@@ -36,7 +37,11 @@ class Window(QMainWindow):
 
         # Camera control
         self.camera = camera
-        self.calibration_checkbox = CheckBox(initially_checked=True)
+
+        def on_auto_calibrate_checked(auto_calibrate: bool):
+            Settings().auto_calibrate = auto_calibrate
+
+        self.calibration_checkbox = CheckBox(initially_checked=Settings().auto_calibrate, callback=on_auto_calibrate_checked)
 
         # All things plotting
         self.plot = RealTimePlot(DataHandler(camera))
@@ -50,7 +55,6 @@ class Window(QMainWindow):
         self.main_widget = self.make_central_widget()
         self.main_widget.setParent(self.central_widget)
 
-        #self.central_widget.setLayout(None)
         self.setCentralWidget(self.central_widget)
         self.main_widget.move(0, 0)
 
@@ -233,6 +237,25 @@ class Window(QMainWindow):
 
         # Help menu
         help_menu = MenuButton("Help")
+        help_menu.get_menu().setMinimumWidth(175)
+
+        def open_documentation():
+            docs_path = os.path.join(current_dir(), Settings().default_docs_path)
+            try:
+                os.startfile(docs_path)
+            except FileNotFoundError:
+                ErrorDialog(f"Could not find expected documentation pdf in '{docs_path}'")
+            except Exception as e:
+                ErrorDialog(e)
+
+        docs_button = help_menu.add_action(QAction("Local documentation"))
+        docs_button.triggered.connect(open_documentation)
+
+        github_button = help_menu.add_action(QAction("GitHub"))
+        github_button.triggered.connect(lambda: webbrowser.open(Settings().github_url))
+
+        xkcd_button = help_menu.add_action(QAction("Electromagnetic spectrum"))
+        xkcd_button.triggered.connect(lambda: webbrowser.open(Settings().xkcd_url))
 
         # Window button container
         button_container = self.create_window_handle_buttons()
@@ -432,10 +455,12 @@ class Window(QMainWindow):
                 wavelength = float(text)
                 self._spectrometer_wl = wavelength
                 self.coeff_calibrator.calibrate(wavelength)
+                Settings().spectrometer_wavelength = text
             except ValueError:
                 pass
 
         center_wl_input = Entry("Spectrometer wavelength (nm)", on_edit=wavelength_edited)
+        center_wl_input.set_text(Settings().spectrometer_wavelength)
         center_wl_input_container.addWidget(center_wl_input)
         center_wl_input_container.addStretch()
         camera_controls_container.addLayout(center_wl_input_container)
@@ -451,7 +476,12 @@ class Window(QMainWindow):
         background_subtraction_container = QHBoxLayout()
         bg_label = QLabel("Subtract background")
         background_subtraction_container.addWidget(bg_label)
-        bg_subtract_checkbox = CheckBox(initially_checked=False, callback=lambda subtract: self.plot.get_primary_graph().configure_bg_subtraction(subtract))
+
+        def on_click_bg_checkbox(subtract: bool):
+            Settings().subtract_bg = subtract
+            self.plot.get_primary_graph().configure_bg_subtraction(subtract)
+
+        bg_subtract_checkbox = CheckBox(initially_checked=Settings().subtract_bg, callback=on_click_bg_checkbox)
         background_subtraction_container.addWidget(bg_subtract_checkbox)
         background_subtraction_container.addStretch()
         camera_controls_container.addLayout(background_subtraction_container)
@@ -744,7 +774,7 @@ class MapInput(QWidget):
             self.wl_input.set_text("")
 
 
-# noinspection PyShadowingNames
+# noinspection PyShadowingNames,D
 class MaxPixelsDialog(Dialog):
     def __init__(self, parent: Window, graph_type: int = RealTimePlot.PRIMARY):
         super().__init__(parent, "Map pixels to wavelengths")
@@ -765,7 +795,7 @@ class MaxPixelsDialog(Dialog):
         layout.addWidget(map_container)
 
         def load_map():
-            fname, _ = QFileDialog.getOpenFileName(filter="CSV Files (*.csv)")
+            fname, _ = QFileDialog.getOpenFileName(filter="CSV Files (*.csv)", directory=str(os.path.join(current_dir(), Settings().default_map_path)))
             if not fname:
                 return
             try:
@@ -795,7 +825,7 @@ class MaxPixelsDialog(Dialog):
                 return
 
         def save_map():
-            fname, _ = QFileDialog.getSaveFileName(filter="CSV Files (*.csv)")
+            fname, _ = QFileDialog.getSaveFileName(filter="CSV Files (*.csv)", directory=str(os.path.join(current_dir(), Settings().default_map_path)))
             if not fname:
                 return
             try:
@@ -926,6 +956,7 @@ class EnterCoeffDialog(Dialog):
             container.addWidget(TeXWidget(f"$a_{i}:$", width=30, height = 40))
             entry = QLineEdit()
             entry.setFixedWidth(150)
+            entry.setText(str(Settings().__getattr__(f"a{i}")))
             self.entries.append(entry)
             container.addWidget(entry)
             container.addStretch()
@@ -951,8 +982,10 @@ class EnterCoeffDialog(Dialog):
     def calculate_fit(self):
         try:
             coefficients = []
-            for entry in self.entries:
+            for i in range(len(self.entries)):
+                entry = self.entries[i]
                 coeff = float(entry.text())
+                Settings().__setattr__(f"a{i}", str(coeff))
                 coefficients.append(coeff)
             self.parent.plot.set_coefficients(tuple(coefficients), self.graph_type)
             self.close()
@@ -977,6 +1010,7 @@ class CoeffEquationDialog(Dialog):
             container.addWidget(TeXWidget(f"$a_{i} = $", width=30, height=40))
             entry = QLineEdit()
             entry.setFixedWidth(400)
+            entry.setText(str(Settings().__getattr__(f"a{i}_eq")))
             self.entries.append(entry)
             container.addWidget(entry)
             container.addStretch()
@@ -995,8 +1029,10 @@ class CoeffEquationDialog(Dialog):
     def apply(self):
         try:
             expressions = []
-            for entry in self.entries:
+            for i in range(len(self.entries)):
+                entry = self.entries[i]
                 coeff_equation = entry.text()
+                Settings().__setattr__(f"a{i}_eq", str(coeff_equation))
                 expressions.append(sympify(coeff_equation))
 
             self.parent.coeff_calibrator.set_expressions(expressions)
@@ -1027,7 +1063,7 @@ class SaveFileDialog(Dialog):
         label = QLabel(prefix + "Column 0: Pixel values\n\nColumn 1: Calibrated wavelength values\n\nColumn 2: Intensities\n\nColumn 3: Background-subtracted intensities\n")
         layout.addWidget(label)
 
-        self.file_input = FileInput(dialog_filter=dialog_filter, is_save_file=True)
+        self.file_input = FileInput(dialog_filter=dialog_filter, is_save_file=True, directory=os.path.join(current_dir(), Settings().default_open_path))
 
         layout.addWidget(self.file_input)
 
@@ -1072,13 +1108,13 @@ class LoadSpectrumDialog(Dialog):
 
         self.delimiter_input = Entry("Delimiter:", max_text_width=25, text=",")
         layout.addWidget(self.delimiter_input)
-        self.row_start_input = Entry("Start at row:", max_text_width=35, text="21")
+        self.row_start_input = Entry("Start at row:", max_text_width=35, text=Settings().load_row_start, on_edit=lambda num: setattr(Settings(), "load_row_start", num) if num.isnumeric() else None)
         layout.addWidget(self.row_start_input)
-        self.wavelength_column_input = Entry("Wavelength column:", max_text_width=35, text="0")
+        self.wavelength_column_input = Entry("Wavelength column:", max_text_width=35, text=Settings().load_wl_col, on_edit=lambda num: setattr(Settings(), "load_wl_col", num) if num.isnumeric() else None)
         layout.addWidget(self.wavelength_column_input)
-        self.intensity_column_input = Entry("Intensity column:", max_text_width=35, text="2")
+        self.intensity_column_input = Entry("Intensity column:", max_text_width=35, text=Settings().load_intensity_col, on_edit=lambda num: setattr(Settings(), "load_intensity_col", num) if num.isnumeric() else None)
         layout.addWidget(self.intensity_column_input)
-        self.file_input = FileInput()
+        self.file_input = FileInput(directory=os.path.join(current_dir(), Settings().default_open_path))
         layout.addWidget(self.file_input)
 
         load_button = SimpleButton("Load", self.on_close)
@@ -1156,22 +1192,26 @@ class DownloadFromNISTDialog(Dialog):
 
         layout = QVBoxLayout()
 
-        self.element_input = Entry("Element:", max_text_width=30)
+        self.element_input = Entry("Element:", max_text_width=45, text=Settings().nist_element, on_edit=lambda element: setattr(Settings(), "nist_element", element))
         layout.addWidget(self.element_input)
 
-        self.start_wl_input = Entry("Start wavelength:", max_text_width=35)
+        self.start_wl_input = Entry("Start wavelength:", max_text_width=55, text=Settings().start_nist_wl, on_edit=lambda wl: setattr(Settings(), "start_nist_wl", wl))
         layout.addWidget(self.start_wl_input)
 
-        self.end_wl_input = Entry("End wavelength:", max_text_width=35)
+        self.end_wl_input = Entry("End wavelength:", max_text_width=55, text=Settings().end_nist_wl, on_edit=lambda wl: setattr(Settings(), "end_nist_wl", wl))
         layout.addWidget(self.end_wl_input)
 
-        self.fwhm_input = Entry("Full width half max:", max_text_width=35)
+        self.fwhm_input = Entry("Full width half max:", max_text_width=55, text=Settings().nist_fwhm, on_edit=lambda fwhm: setattr(Settings(), "start_nist_wl", fwhm))
         layout.addWidget(self.fwhm_input)
 
-        self.intensity_fraction_input = Entry("Intensity fraction:", max_text_width=35)
+        self.intensity_fraction_input = Entry("Intensity fraction:", max_text_width=55, text=Settings().nist_intensity_fraction, on_edit=lambda intensity_fraction: setattr(Settings(), "nist_intensity_fraction", intensity_fraction))
         layout.addWidget(self.intensity_fraction_input)
 
-        self.file_input = FileInput(label_text="Save to:", is_save_file=True, dialog_filter="TXT File (*.txt)")
+        def update_saved_file(text):
+            if os.path.exists(text) and os.path.isfile(text):
+                Settings().nist_file = text
+
+        self.file_input = FileInput(label_text="Save to:", is_save_file=True, dialog_filter="TXT File (*.txt)", start_path=Settings().nist_file, on_file_chosen=update_saved_file)
         layout.addWidget(self.file_input)
 
         load_button = SimpleButton("Load", self.on_close)
@@ -1221,19 +1261,23 @@ class OpenFromNISTDialog(Dialog):
 
         layout = QVBoxLayout()
 
-        self.start_wl_input = Entry("Start wavelength:", max_text_width=35, text="400")
+        self.start_wl_input = Entry("Start wavelength:", max_text_width=55, text=Settings().start_nist_wl, on_edit=lambda wl: setattr(Settings(), "start_nist_wl", wl))
         layout.addWidget(self.start_wl_input)
 
-        self.end_wl_input = Entry("End wavelength:", max_text_width=35, text="700")
+        self.end_wl_input = Entry("End wavelength:", max_text_width=55, text=Settings().end_nist_wl, on_edit=lambda wl: setattr(Settings(), "end_nist_wl", wl))
         layout.addWidget(self.end_wl_input)
 
-        self.fwhm_input = Entry("Full width half max:", max_text_width=35, text="1")
+        self.fwhm_input = Entry("Full width half max:", max_text_width=55, text=Settings().nist_fwhm, on_edit=lambda fwhm: setattr(Settings(), "start_nist_wl", fwhm))
         layout.addWidget(self.fwhm_input)
 
-        self.intensity_fraction_input = Entry("Intensity fraction:", max_text_width=35, text="0.3")
+        self.intensity_fraction_input = Entry("Intensity fraction:", max_text_width=55, text=Settings().nist_intensity_fraction, on_edit=lambda intensity_fraction: setattr(Settings(), "nist_intensity_fraction", intensity_fraction))
         layout.addWidget(self.intensity_fraction_input)
 
-        self.file_input = FileInput(label_text="File:", dialog_filter="TXT File (*.txt)")
+        def update_saved_file(text):
+            if os.path.exists(text) and os.path.isfile(text):
+                Settings().nist_file = text
+
+        self.file_input = FileInput(label_text="File:", dialog_filter="TXT File (*.txt)", start_path=Settings().nist_file, on_file_chosen=update_saved_file)
         layout.addWidget(self.file_input)
 
         load_button = SimpleButton("Load", self.on_close)
