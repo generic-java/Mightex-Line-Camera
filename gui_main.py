@@ -255,7 +255,16 @@ class Window(QMainWindow):
         github_button.triggered.connect(lambda: webbrowser.open(Settings().github_url))
 
         xkcd_button = help_menu.add_action(QAction("Electromagnetic spectrum"))
-        xkcd_button.triggered.connect(lambda: webbrowser.open(Settings().xkcd_url))
+
+        def open_comic():
+            comic_path = os.path.join(current_dir(), Settings().xkcd_path)
+            try:
+                os.startfile(comic_path)
+            except Exception as e:
+                ErrorDialog(e)
+
+        #xkcd_button.triggered.connect(lambda: webbrowser.open(Settings().xkcd_url))
+        xkcd_button.triggered.connect(open_comic)
 
         # Window button container
         button_container = self.create_window_handle_buttons()

@@ -31,7 +31,8 @@ _unloadable_settings = {
     "default_map_path": "Mappings",
     "default_docs_path": r"res\files\Documentation.pdf",
     "github_url": "https://github.com/generic-java/Mightex-Line-Camera",
-    "xkcd_url": "https://xkcd.com/273"
+    "xkcd_url": "https://xkcd.com/273",
+    "xkcd_path": r"res\images\electromagnetic_spectrum.png"
 }
 
 class Settings:
